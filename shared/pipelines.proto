@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package shared;
 
-message Record {
+message EmitRecord {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   string data = 3;          // Actual data to be processed
@@ -14,6 +14,13 @@ message RecordComplete {
   uint64 correlationID = 1; // Global Work Object Identifier
   uint64 guid = 2;          // Globally Unique Identifier
   uint64 record_quid = 3;   // GUID for completed record
+}
+
+message ProcessRecord {
+  uint64 correlationID = 1; // Global Work object Identifier
+  uint64 guid = 2;          // Global Unique Identifier
+  string data = 3;          // Actual data to be processed
+  string source = 4;        // The type of source node
 }
 
 message RouteRequest {
