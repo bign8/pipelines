@@ -49,7 +49,7 @@ func NewHandler() *Handler {
 func (h *Handler) handle(req shared.RouteRequest) {
 	request := Request{}
 
-	// Handling based on node type
+	// (BALANCE 2) Handling based on node type
 	// TODO: lookup destination based on source
 	nodeType := NodeType(req.Source)
 	lookup, ok := h.index[nodeType]
@@ -57,14 +57,14 @@ func (h *Handler) handle(req shared.RouteRequest) {
 		h.queue <- request
 	}
 
-	// Handling based on mined keys
+	// (BALANCE 2) Handling based on mined keys
 	dataKey := KeyType(req.Key)
 	worker, ok := lookup[dataKey]
 	if !ok {
 		h.queue <- request
 	}
 
-	// Direct route of handling requsts
+	// (ROUTE) Direct route of handling requsts
 	worker.requests <- request
 	worker.pending++
 	heap.Fix(&h.balancer.pool, worker.index)

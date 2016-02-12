@@ -13,4 +13,3 @@ cd pipelines
 # Setup console
 echo "source ~/pipelines/config/dot.profile" > ~/.profile
 source ~/.profile
-

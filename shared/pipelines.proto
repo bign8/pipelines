@@ -29,3 +29,8 @@ message RouteRequest {
   string key = 3;            // The mined key for the payload
   string source = 4;         // type of source node
 }
+
+
+// message Graph {
+//  map<string, string> edges = 1;
+// }
