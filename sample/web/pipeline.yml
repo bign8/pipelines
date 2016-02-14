@@ -1,8 +1,34 @@
 %YAML 1.2
 ---
 Name: Web Crawler
+Type: Config
 
 Nodes: # Dictates where node level configurations are stored
-  index: bitbucket.org/bign8/pipelines/sample/web/index
-  crawl: bitbucket.org/bign8/pipelines/sample/web/crawl
-  store: bitbucket.org/bign8/pipelines/sample/web/store
+  index: bitbucket.org/bign8/pipelines/sample/web
+  crawl: bitbucket.org/bign8/pipelines/sample/web
+  store: bitbucket.org/bign8/pipelines/sample/web
+---
+Name: index
+Type: Node
+
+In:
+  index_request: @
+
+Out:
+  - crawl_request
+---
+Name: store
+Type: Node
+
+In:
+  store_request: *
+---
+Name: crawl
+Type: Node
+
+In:
+  crawl_request: *
+
+Out:
+  - index_request
+  - store_request

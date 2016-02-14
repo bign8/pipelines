@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package shared;
+package pipelines;
 
 message Emit {
   Record record = 1; // record emitted
@@ -8,15 +8,22 @@ message Emit {
 }
 
 message Work {
-  uint64 correlationID = 1; // Global Work object Identifier
-  uint64 guid = 2;          // Global Unique Identifier
-  string data = 3;          // Actual data to be processed
+  Record record = 1; // record to be processed
+  string worker = 2; // type of worker to operate on record with
+  string key = 3;    // type of key to fan out on a particular worker with
 }
 
 message Record {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   string data = 3;          // Actual data to be processed
+}
+
+
+message Timer {
+  uint64 correlationID = 1; // Global work object Identifier
+  uint64 guid = 2;          // Global Unique Identifier
+  uint64 stamp = 3;      // Time to execute the time
 }
 
 // message Graph {

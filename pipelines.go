@@ -4,71 +4,107 @@ import (
 	"errors"
 	"log"
 
-	"bitbucket.org/bign8/pipelines/shared"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
-// WorkerFn is a function that processes work
-type WorkerFn func(*shared.Work) error
+//go:generate protoc --go_out=. pipelines.proto
 
-// Computation is the basis operation that workers consume
-type Computation struct {
-	work WorkerFn
-	conn *nats.Conn
-	Done chan struct{}
-}
+// Local scoped NATS connection instance
+var conn *nats.Conn
 
-func (c *Computation) handleWork(m *nats.Msg) {
-	var work *shared.Work
+// Local instances of computations to be ran
+var instances api
+
+type api map[string]Computation
+
+func (a api) handleWork(m *nats.Msg) {
+	var work Work
 
 	// Unmarshal message
-	if err := proto.Unmarshal(m.Data, work); err != nil {
+	if err := proto.Unmarshal(m.Data, &work); err != nil {
 		log.Printf("unmarshaling error: %v", err)
 		return
 	}
 
-	c.work(work)
+	// Find worker
+	c, ok := a[work.Worker]
+	if !ok {
+		log.Printf("worker not found: %v", work.Worker)
+		return
+	}
+	c.ProcessRecord(work.GetRecord())
 }
 
-// local instance scope
-var instance *Computation
-
-// RegisterWorkerFn registers a known worker function
-func RegisterWorkerFn(fn WorkerFn) {
-	if instance == nil {
-		panic(errors.New("Unloaded error"))
+// Register registers a parent instance of a computaton as a potential worker
+func Register(name string, comp Computation) {
+	if _, ok := instances[name]; ok {
+		panic(errors.New("Already assigned computation"))
 	}
-	instance.work = fn
+	instances[name] = comp
+	conn.Subscribe("pipelines.node."+name, instances.handleWork)
+}
+
+// Computation is the base interface for all working operations
+type Computation interface {
+	ProcessRecord(*Record) error
+	ProcessTimer(*Timer) error
+	// GetState() interface{} // Called after timer and process calls to store internal state
+	// SetState(interface{})  // Called before timer and process calls to setup internal state
 }
 
 // EmitRecord transmits a record to the system
-func EmitRecord(record *shared.Emit, stream string) error {
+func EmitRecord(stream string, record *Record) error {
 	data, err := proto.Marshal(record)
 	if err != nil {
 		return err
 	}
-	instance.conn.Publish("pipelines.server.emit", data)
+	conn.Publish("pipelines.server.emit", data)
 	return nil
 }
 
 // Run is the primary sleep for the operating loop
-func Run() <-chan struct{} {
-	// TODO: load configuration
-	nodeType := "testType"
-	nodeKey := "testKey"
+func Run() {
+	for true {
+		// burn
+	}
+	return
+}
 
-	// Startup nats connection
-	nc, err := nats.Connect(nats.DefaultURL)
+// Startup nats connection
+func init() {
+	var err error
+	conn, err = nats.Connect(nats.DefaultURL)
 	if err != nil {
 		panic(err)
 	}
-	instance = &Computation{
-		conn: nc,
-		Done: make(chan struct{}),
-	}
-	nc.Subscribe("pipelines.node."+nodeType+"."+nodeKey, instance.handleWork)
-	// TODO: startup server
-	// TODO: on restart commands kill self
-	return instance.Done
 }
+
+// New constructs new record based on a source record
+func (r *Record) New(data string) *Record {
+	return &Record{
+		CorrelationID: r.CorrelationID,
+		Guid:          0, // TODO: generate at random
+		Data:          data,
+	}
+}
+
+// // Timer is the base of a timer based operation
+// type Timer struct {
+// }
+//
+// // State is the base for all state types
+// type State struct {
+// }
+//
+// // Computation is the base interface for all working operations
+// type Computation interface {
+// 	// Hooks called by the system.
+// 	ProcessRecord(Record)
+// 	ProcessTimer(Timer)
+//
+// 	// Acessors for other abstractions.
+// 	SetTimer(string, int64)
+// 	ProduceRecord(Record, string)
+// 	MutablePersistentState() State
+// }
