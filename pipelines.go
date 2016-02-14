@@ -71,15 +71,6 @@ func Run() {
 	return
 }
 
-// Startup nats connection
-func init() {
-	var err error
-	conn, err = nats.Connect(nats.DefaultURL)
-	if err != nil {
-		panic(err)
-	}
-}
-
 // New constructs new record based on a source record
 func (r *Record) New(data string) *Record {
 	return &Record{
@@ -89,22 +80,12 @@ func (r *Record) New(data string) *Record {
 	}
 }
 
-// // Timer is the base of a timer based operation
-// type Timer struct {
-// }
-//
-// // State is the base for all state types
-// type State struct {
-// }
-//
-// // Computation is the base interface for all working operations
-// type Computation interface {
-// 	// Hooks called by the system.
-// 	ProcessRecord(Record)
-// 	ProcessTimer(Timer)
-//
-// 	// Acessors for other abstractions.
-// 	SetTimer(string, int64)
-// 	ProduceRecord(Record, string)
-// 	MutablePersistentState() State
-// }
+// Startup nats connection
+func init() {
+	var err error
+	conn, err = nats.Connect(nats.DefaultURL)
+	if err != nil {
+		panic(err)
+	}
+	instances = make(api)
+}
