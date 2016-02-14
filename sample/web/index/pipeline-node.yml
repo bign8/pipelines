@@ -1,0 +1,9 @@
+%YAML 1.2
+---
+Name: Indexer
+
+Inbound:
+  index_request: @
+
+Outbound:
+  - crawl_request

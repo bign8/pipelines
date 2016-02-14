@@ -2,34 +2,22 @@ syntax = "proto3";
 
 package shared;
 
-message EmitRecord {
+message Emit {
+  Record record = 1; // record emitted
+  string stream = 2; // stream record was emitted to
+}
+
+message Work {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   string data = 3;          // Actual data to be processed
-  string stream = 4;        // file stream emitted to
-  string source = 5;        // The type of source node
 }
 
-message RecordComplete {
-  uint64 correlationID = 1; // Global Work Object Identifier
-  uint64 guid = 2;          // Globally Unique Identifier
-  uint64 record_quid = 3;   // GUID for completed record
-}
-
-message ProcessRecord {
+message Record {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   string data = 3;          // Actual data to be processed
-  string source = 4;        // The type of source node
 }
-
-message RouteRequest {
-  uint64 correlationID = 1;  // Global Work object Identifier
-  uint64 guid = 2;           // Global Unique Identifier
-  string key = 3;            // The mined key for the payload
-  string source = 4;         // type of source node
-}
-
 
 // message Graph {
 //  map<string, string> edges = 1;

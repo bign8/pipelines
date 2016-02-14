@@ -1,0 +1,6 @@
+%YAML 1.2
+---
+Name: Storer
+
+Inbound:
+  store_request: *

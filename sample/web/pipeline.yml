@@ -1,0 +1,8 @@
+%YAML 1.2
+---
+Name: Web Crawler
+
+Nodes: # Dictates where node level configurations are stored
+  index: bitbucket.org/bign8/pipelines/sample/web/index
+  crawl: bitbucket.org/bign8/pipelines/sample/web/crawl
+  store: bitbucket.org/bign8/pipelines/sample/web/store
