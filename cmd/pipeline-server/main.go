@@ -7,6 +7,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	server := NewServer(nc)
-	<-server.Done
+	<-NewServer(nc).Done
 }
