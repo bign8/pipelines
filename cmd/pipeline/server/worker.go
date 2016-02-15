@@ -1,4 +1,4 @@
-package main
+package server
 
 import "bitbucket.org/bign8/pipelines"
 

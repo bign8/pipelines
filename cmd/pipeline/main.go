@@ -50,7 +50,7 @@ func (c *Command) Runnable() bool {
 var commands = []*Command{
 	cmdSend,
 	cmdAgent,
-	// cmdLoad,
+	cmdServer,
 	// cmdAdd,
 }
 
