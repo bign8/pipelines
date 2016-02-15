@@ -1,6 +1,6 @@
 package main
 
-import "bitbucket.org/bign8/pipelines/shared"
+import "bitbucket.org/bign8/pipelines"
 
 // Miner is a message miner
 type Miner func(string) string
@@ -15,12 +15,12 @@ type Part struct {
 type Node struct {
 	workers map[string]*Worker
 	mine    Miner
-	Queue   chan<- *shared.Emit
+	Queue   chan<- *pipelines.Emit
 }
 
 // NewNode starts a new node to work with
 func NewNode(done <-chan struct{}) *Node {
-	q := make(chan *shared.Emit, 10)
+	q := make(chan *pipelines.Emit, 10)
 	// TODO: generate Miner function
 	n := &Node{
 		Queue: q,
@@ -42,8 +42,8 @@ func NewNode(done <-chan struct{}) *Node {
 }
 
 // processEmit deals with a single emit in a deferred context
-func (n *Node) processEmit(emit *shared.Emit) {
-	key := n.mine(emit.Data)
+func (n *Node) processEmit(emit *pipelines.Emit) {
+	key := n.mine(emit.Record.Data)
 	w, ok := n.workers[key]
 	if !ok {
 		w = NewWorker(n)

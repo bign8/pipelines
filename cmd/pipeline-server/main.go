@@ -7,9 +7,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	server := NewServer()
-	nc.Subscribe("pipelines.server.emit", server.handleEmit)
-	nc.Subscribe("pipelines.server.note", server.handleNote)
-	nc.Subscribe("pipelines.server.kill", server.handleKill)
+	server := NewServer(nc)
 	<-server.Done
 }
