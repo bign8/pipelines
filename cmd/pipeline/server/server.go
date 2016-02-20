@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	"bitbucket.org/bign8/pipelines"
 	"github.com/golang/protobuf/proto"
@@ -20,20 +21,63 @@ type Server struct {
 }
 
 // NewServer ...
-func NewServer(nc *nats.Conn) *Server {
+func NewServer(url string) *Server {
 	server := &Server{
-		Done:    make(chan struct{}),
-		Streams: make(map[string][]*Node),
-		conn:    nc,
+		Done:     make(chan struct{}),
+		Streams:  make(map[string][]*Node),
+		agentIDs: make(map[string]bool),
 	}
 
-	// TODO: load graph configuration
+	var err error
+	server.conn, err = nats.Connect(url, nats.Name("Pipeline Server"))
+	if err != nil {
+		panic(err)
+	}
 
-	nc.Subscribe("pipelines.server.emit", server.handleEmit)
-	nc.Subscribe("pipelines.server.note", server.handleNote)
-	nc.Subscribe("pipelines.server.kill", server.handleKill)
-	nc.Subscribe("pipelines.server.agent.start", server.handleAgentStart)
+	// Set error handlers
+	server.conn.SetClosedHandler(server.natsClose)
+	server.conn.SetDisconnectHandler(server.natsDisconnect)
+	server.conn.SetReconnectHandler(server.natsReconnect)
+	server.conn.SetErrorHandler(server.natsError)
+
+	// Set message handlers
+	server.conn.Subscribe("pipelines.server.emit", server.handleEmit)
+	server.conn.Subscribe("pipelines.server.note", server.handleNote)
+	server.conn.Subscribe("pipelines.server.kill", server.handleKill)
+	server.conn.Subscribe("pipelines.server.load", server.handleLoad)
+	server.conn.Subscribe("pipelines.server.agent.start", server.handleAgentStart)
 	return server
+}
+
+// natsClose handles NATS close calls
+func (s *Server) natsClose(nc *nats.Conn) {
+	log.Printf("TODO: NATS Close")
+}
+
+// natsDisconnect handles NATS close calls
+func (s *Server) natsDisconnect(nc *nats.Conn) {
+	log.Printf("TODO: NATS Disconnect")
+}
+
+// natsReconnect handles NATS close calls
+func (s *Server) natsReconnect(nc *nats.Conn) {
+	log.Printf("TODO: NATS Reconnect")
+	for agentID := range s.agentIDs {
+		msg, err := s.conn.Request("pipelines.agent."+agentID+".ping", []byte("PING"), time.Second)
+		if err != nil || string(msg.Data) != "PONG" {
+			log.Printf("Agent Deleted: %s", agentID)
+			delete(s.agentIDs, agentID)
+		} else {
+			log.Printf("Agent Found: %s", agentID)
+		}
+	}
+}
+
+// natsError handles NATS close calls
+func (s *Server) natsError(nc *nats.Conn, sub *nats.Subscription, err error) {
+	log.Printf("NATS Error conn: %+v", nc)
+	log.Printf("NATS Error subs: %+v", sub)
+	log.Printf("NATS Error erro: %+v", err)
 }
 
 // handleEmit deals with clients emits requests
@@ -99,4 +143,10 @@ func (s *Server) handleAgentStart(m *nats.Msg) {
 		_, ok = s.agentIDs[guid]
 	}
 	s.conn.Publish(m.Reply, []byte(guid))
+	s.agentIDs[guid] = true
+}
+
+// handleLoad downloads and processes a pipeline configuration file
+func (s *Server) handleLoad(m *nats.Msg) {
+	log.Printf("Handling Load Request: %s", m.Data)
 }

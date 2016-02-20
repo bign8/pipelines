@@ -17,10 +17,7 @@ func runServer(cmd *Command, args []string) {
 	if len(args) < 1 {
 		args = append(args, nats.DefaultURL)
 	}
-	log.Printf("Connecting to server: %s", args[0])
-	nc, err := nats.Connect(args[0])
-	if err != nil {
-		panic(err)
-	}
-	<-server.NewServer(nc).Done
+	url := args[0]
+	log.Printf("Connecting to server: %s", url)
+	<-server.NewServer(url).Done
 }
