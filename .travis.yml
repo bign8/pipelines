@@ -1,0 +1,26 @@
+language: go
+sudo: required  # docker not supported in docker
+
+services:
+  - docker
+
+go:
+  - '1.5'
+
+env:
+  global:
+    - secure: "C8JgQrk2xm9tBpL55QvlW34/xR2CsLGj+nMpvto9a/k+0GmeDvQLFmuYTXHcC1JhODnbT0MWnd8j3CxoAHojm+yCjxTIkGgcNy5Ivs/8F/TPjCMzpfH5BmP1libAYoG/MctUceq7TZewIw3eEJ89Y+m7OToajOsNxrh7U7c7hYHUA4mb7wqMfizZVouWCgvv8rw9Sxyx+ZLApX20ty2R8X6loXWXdW2TOnVfncd5RQXXPEvnXRShnVHQStcVadqPbEW88zi+hc8ApDth0M7ujhsSU2lUrwR7kuPKyYhfpd6MoIQ5nJhzfWBN73i+PL7ma4LGp12c9uJLdD3rKM6Q9wEOgrZgx2/S1XXTROimZ/TRh88p9CMLrlkKzunPnW0sfF+I+wIhdhwFrN/EK5pzR7UFWuL2WpeoS+Bf30GnsNX0zM6LMZ7aL+85uuwdyIB9X8fYrPButZJ1CMPvYzBiDuz0Hgr7AkQD5hktIT3c0ma83+194W56CGCvICA9QokhGFwJClNRWQjZYgOhg3nlYhtpC0Od8IqTRwS8p+zXkolss/YeYygpEuYeI9SM7f6GJmAZO45k/qje70BHxRLt5hxiKUCeiagcR3xECHNARMY3HdOE+JB5Gl4+HGFKEx5rFCRp/Hf55n2EU8Es8mWLOcJGTw3aWs9sO5eBraSCMKw=" # DOCKER_EMAIL
+    - secure: "Y4b88xIUWFL53MkgtVCI0bk0xQATPdonbwHA94HP1mbd2TCGabti0aFdIH/5lQ0aXEKi9uN6n/CLi4VyUz++sxlr22k9nkhpNNgPcgFak6v6dgJAFL7hG7Z5OfVQyxPIocMzsJ/I7otKi2jUEw+qJ4jAyp6Q2Hzw/oYgbTeje0T4DKqPNND4h4qfkP1RLyAsimItteiSo2voSmG01FiT4kTMm7PbIg2PZfdCkPxSghMbfMhhhJ574fNveUg9VSwEMU8o4jXL1Niup69XpUpiK5TrpYAroGLBCTtI8O9oJr7xcdEBl2K0bsUmFfJTO3ZGH51R5vEhi/Lpe3KscV4f0etglMKEiutL4gYAdsqmB6uIJ3YtHlWzB3/mWNJjgTqVrBo6sFgYq+jCASVNp3ODHuBWBK2kGAEJL3nGpyxAllJ5YgPNQgQQBUJY6rapIaUZPMwbkJgGD1hulpUraQRBW/ietoQxuEOn88CeLwYVWPiPOwE+l5FKyYRWFkWoQt/d4Inva+CLzcowybaKz2a45EEDUt1SrpyoSUZmQ/nog6Zg7ubIexhZJQW9Qngt5l5ogWuLFVgu+WKfDprirKtD1SoFBpIyZ+lBaE6XFftAG1PKks2L1RcAfNoqtNat/oQ6eFRc/MvyGOZuO2GSH1hZgiL/X3zTczwf2hCer6bOxg4=" # DOCKER_USER
+    - secure: "AogdmMl6vXqixpAB9HKX+GeuHIE4oyTR6/C/CFquXT0LjOOGEyQKrSqUob6qWHmk/Rz1PcIPo0EUtUvBe62JrfsPNqgdwOyXjzpo2mQr75Ep2ZDh51WDQ3LJG5ZOYTDREuEZl9hjvmwSbASy8vmBUrqte2WFDtRT0Yo4N3SCpWn28cmQbxuBfVc9Ta059PqGDUToMXixj8T/0PdBmiHNX+7zbeHgXlDGLkPEaQ8ju6GEXLNYXES19NsRsNJmVoWrPAprCCxbRyjAceo4NZ50CJOKqs3hpfrw7wXfbJnBCnOBE8rF/q2h4hRQqFSXMfQbiBMUg3m6Nw3TsWYtR80E7FgbMyTcMNKXh/EPrYzndDN5EBW+d4kGNYHtOlUf6Ko/FT79K0bLJzjkXAdpcaaeQKO3Jm5hS5JZFZAJ5dU1cZLr/JL/nnDzjkxhz9kerQmQgCJ9w4tbpNrKIUEjblFxFGEMs3JClyasaZQMIj2sDIjJ5tY+3BnCwEMPcNcwo6C45GSsK0Ufu2slil311ST9njxu8wL1ynEDHxDw5bpwpphwk1Jkgiw6BM7dgc8C8Xur8WmNaDXQeqGiH4f0022aM6rHdehLQicD1Ye1ZGp0lLbHImYIVNa8VLfg5lzbWgWZ1Ai8iiCsHfSBqloggLngN4nE/7+gkW/+KHJh2DXfpes=" # DOCKER_PASS
+    - COMMIT=${TRAVIS_COMMIT::8}
+
+after_success:
+  - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o pipeline cmd/pipeline/*.go
+  - docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS
+  - docker build -f Dockerfile -t $TRAVIS_REPO_SLUG:$COMMIT .
+  - if [ "$TRAVIS_BRANCH" == "master" ] && [[ "${TRAVIS_PULL_REQUEST}" != "false" ]]; then docker tag $TRAVIS_REPO_SLUG:$COMMIT $TRAVIS_REPO_SLUG:latest; fi
+  - docker tag $TRAVIS_REPO_SLUG:$COMMIT $TRAVIS_REPO_SLUG:travis-$TRAVIS_BUILD_NUMBER
+  - docker push $TRAVIS_REPO_SLUG
+
+notifications:
+  email: false

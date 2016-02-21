@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"bitbucket.org/bign8/pipelines"
+	"github.com/bign8/pipelines"
 )
 
 // Crawler is the actual crawler type

@@ -7,7 +7,7 @@ git config --global user.name "Nate Woods"
 git config --global user.email big.nate.w@gmail.com
 
 # Clone Repository
-git clone https://bign8@bitbucket.org/bign8/pipelines.git
+git clone https://bign8@github.com/bign8/pipelines.git
 cd pipelines
 
 # Setup console

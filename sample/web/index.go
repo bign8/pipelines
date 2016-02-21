@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"bitbucket.org/bign8/pipelines"
+	"github.com/bign8/pipelines"
 )
 
 // Indexer is the indexer type

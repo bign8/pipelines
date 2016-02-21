@@ -42,6 +42,7 @@ func Register(name string, comp Computation) {
 		panic(errors.New("Already assigned computation"))
 	}
 	instances[name] = comp
+	initConn()
 	conn.Subscribe("pipelines.node."+name, instances.handleWork)
 }
 
@@ -81,11 +82,17 @@ func (r *Record) New(data string) *Record {
 }
 
 // Startup nats connection
-func init() {
-	var err error
-	conn, err = nats.Connect(nats.DefaultURL)
-	if err != nil {
-		panic(err)
+func initConn() {
+	if conn == nil {
+		var err error
+		conn, err = nats.Connect(nats.DefaultURL)
+		if err != nil {
+			panic(err)
+		}
 	}
+}
+
+// Initialize internal memory model
+func init() {
 	instances = make(api)
 }

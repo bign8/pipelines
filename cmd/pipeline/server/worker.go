@@ -1,6 +1,6 @@
 package server
 
-import "bitbucket.org/bign8/pipelines"
+import "github.com/bign8/pipelines"
 
 // Worker is the in-memory representation of a remote worker
 type Worker struct {

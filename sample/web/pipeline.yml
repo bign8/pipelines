@@ -3,9 +3,9 @@ Name: Web Crawler
 Type: Config
 
 Nodes: # Dictates where node level configurations are stored
-  index: bitbucket.org/bign8/pipelines/sample/web
-  crawl: bitbucket.org/bign8/pipelines/sample/web
-  store: bitbucket.org/bign8/pipelines/sample/web
+  index: github.com/bign8/pipelines/sample/web
+  crawl: github.com/bign8/pipelines/sample/web
+  store: github.com/bign8/pipelines/sample/web
 ---
 Name: index
 Type: Node

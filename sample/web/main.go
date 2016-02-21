@@ -1,6 +1,6 @@
 package main
 
-import "bitbucket.org/bign8/pipelines"
+import "github.com/bign8/pipelines"
 
 func main() {
 	pipelines.Register("crawl", NewCrawler())

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
 
-	"bitbucket.org/bign8/pipelines"
+	"github.com/bign8/pipelines"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
@@ -198,9 +197,4 @@ func (s *Server) handleLoad(m *nats.Msg) {
 	}
 
 	fmt.Printf("Full Config: %+v\n", s)
-}
-
-func clear(v interface{}) {
-	p := reflect.ValueOf(v).Elem()
-	p.Set(reflect.Zero(p.Type()))
 }
