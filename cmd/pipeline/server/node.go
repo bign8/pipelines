@@ -1,9 +1,10 @@
 package server
 
-import "bitbucket.org/bign8/pipelines"
+import (
+	"log"
 
-// Miner is a message miner
-type Miner func(string) string
+	"bitbucket.org/bign8/pipelines"
+)
 
 // Part ...
 type Part struct {
@@ -13,17 +14,24 @@ type Part struct {
 
 // Node is a graph node
 type Node struct {
-	workers map[string]*Worker
-	mine    Miner
+	Name    string
+	workers map[string]*Worker // Key: mined key for worker
+	mine    map[string]Miner   // Key: source stream
 	Queue   chan<- *pipelines.Emit
 }
 
 // NewNode starts a new node to work with
-func NewNode(done <-chan struct{}) *Node {
+func NewNode(name string, mine map[string]string, done <-chan struct{}) *Node {
 	q := make(chan *pipelines.Emit, 10)
-	// TODO: generate Miner function
 	n := &Node{
+		Name:  name,
 		Queue: q,
+		mine:  make(map[string]Miner),
+	}
+
+	// Generate miner functions
+	for key, mineConfig := range mine {
+		n.mine[key] = NewMiner(mineConfig)
 	}
 
 	// Startup Queue listening go-routine
@@ -43,7 +51,12 @@ func NewNode(done <-chan struct{}) *Node {
 
 // processEmit deals with a single emit in a deferred context
 func (n *Node) processEmit(emit *pipelines.Emit) {
-	key := n.mine(emit.Record.Data)
+	mineFn, ok := n.mine[emit.Stream]
+	if !ok {
+		log.Printf("%s unable to mine for data on stream: %+v", n.Name, emit)
+		return
+	}
+	key := mineFn(emit.Record.Data)
 	w, ok := n.workers[key]
 	if !ok {
 		w = NewWorker(n)

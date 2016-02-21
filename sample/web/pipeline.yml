@@ -1,4 +1,3 @@
-%YAML 1.2
 ---
 Name: Web Crawler
 Type: Config
@@ -10,24 +9,27 @@ Nodes: # Dictates where node level configurations are stored
 ---
 Name: index
 Type: Node
+CMD: run_index.sh SOMETHING
 
 In:
-  index_request: @
+  index_request: "@"
 
 Out:
   - crawl_request
 ---
 Name: store
 Type: Node
+CMD: run_store.sh SOMETHING
 
 In:
-  store_request: *
+  store_request: "*"
 ---
 Name: crawl
 Type: Node
+CMD: run_crawl.sh SOMETHING
 
 In:
-  crawl_request: *
+  crawl_request: "*"
 
 Out:
   - index_request

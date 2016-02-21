@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io/ioutil"
 	"log"
 
 	"github.com/nats-io/nats"
@@ -17,11 +18,20 @@ func runLoad(cmd *Command, args []string) {
 	if len(args) < 1 {
 		panic(errors.New("Not enough arguments provided"))
 	}
+
+	// Read file
+	config, err := ioutil.ReadFile(args[0] + "/pipeline.yml")
+	if err != nil {
+		panic(err)
+	}
+
+	// Open nats conn
 	nc, err := nats.Connect(nats.DefaultURL)
 	defer nc.Close()
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("Sending load: %v", args)
-	nc.Publish("pipelines.server.load", []byte(args[0]))
+
+	log.Printf("Sending load: %s", args[0]+"/pipeline.yml")
+	nc.Publish("pipelines.server.load", config)
 }

@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v2"
 
 	"bitbucket.org/bign8/pipelines"
 	"github.com/golang/protobuf/proto"
@@ -146,7 +150,57 @@ func (s *Server) handleAgentStart(m *nats.Msg) {
 	s.agentIDs[guid] = true
 }
 
+type dataType struct {
+	Name  string            `yaml:"Name"`
+	Type  string            `yaml:"Type"`
+	CMD   string            `yaml:"CMD,omitempty"`
+	Nodes map[string]string `yaml:"Nodes,omitempty"`
+	In    map[string]string `yaml:"In,omitempty"`
+}
+
 // handleLoad downloads and processes a pipeline configuration file
 func (s *Server) handleLoad(m *nats.Msg) {
-	log.Printf("Handling Load Request: %s", m.Data)
+	log.Printf("Handling Load Request: %s", m.Reply)
+
+	// TODO: accept URL addresses
+	// TODO: Parse bitbucket requests... convert a to b
+	//   a: bitbucket.org/bign8/pipelines/sample/web
+	//   b: bitbucket.org/bign8/pipelines/raw/master/sample/web
+	// log.Printf("Loading Config: %s", m.Data)
+	// resp, err := http.Get("http://" + string(m.Data) + "/pipeline.yml")
+	// if err != nil {
+	// 	log.Printf("Cannot Load: %s", m.Data)
+	// 	return
+	// }
+	// config, err := ioutil.ReadAll(resp.Body)
+
+	nodes := make(map[string]dataType)
+
+	// Parse YAML into memory structure
+	configData := strings.Split(string(m.Data), "---")[1:]
+	for _, configFile := range configData {
+		var config dataType
+		if err := yaml.Unmarshal([]byte("---\n"+configFile), &config); err != nil {
+			log.Printf("error loading config: %s", err)
+			return
+		}
+		if config.Type == "Node" {
+			nodes[config.Name] = config
+		}
+	}
+
+	// Initialize nodes into the server
+	for name, config := range nodes {
+		node := NewNode(name, config.In, s.Done)
+		for streamName := range config.In {
+			s.Streams[streamName] = append(s.Streams[streamName], node)
+		}
+	}
+
+	fmt.Printf("Full Config: %+v\n", s)
+}
+
+func clear(v interface{}) {
+	p := reflect.ValueOf(v).Elem()
+	p.Set(reflect.Zero(p.Type()))
 }
