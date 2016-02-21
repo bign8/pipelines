@@ -1,5 +1,5 @@
 language: go
-sudo: false
+sudo: required  # docker not supported in docker
 
 services:
   - docker
@@ -17,12 +17,10 @@ env:
 after_success:
   - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o pipeline cmd/pipeline/*.go
   - docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS
-  - export REPO=bign8/pipelines
-  - export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest"; else echo $TRAVIS_BRANCH ; fi`
-  - docker build -f Dockerfile -t $REPO:$COMMIT .
-  - docker tag $REPO:$COMMIT $REPO:$TAG
-  - docker tag $REPO:$COMMIT $REPO:travis-$TRAVIS_BUILD_NUMBER
-  - docker push $REPO
+  - docker build -f Dockerfile -t $TRAVIS_REPO_SLUG:$COMMIT .
+  - if [ "$TRAVIS_BRANCH" == "master" ] && [[ "${TRAVIS_PULL_REQUEST}" != "false" ]]; then docker tag $TRAVIS_REPO_SLUG:$COMMIT $TRAVIS_REPO_SLUG:latest; fi
+  - docker tag $TRAVIS_REPO_SLUG:$COMMIT $TRAVIS_REPO_SLUG:travis-$TRAVIS_BUILD_NUMBER
+  - docker push $TRAVIS_REPO_SLUG
 
 notifications:
   email: false
