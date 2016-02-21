@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"bitbucket.org/bign8/pipelines/cmd/pipeline/agent"
+	"github.com/bign8/pipelines/cmd/pipeline/agent"
 	"github.com/nats-io/nats"
 )
 

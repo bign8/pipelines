@@ -1,5 +1,6 @@
-package main
+package attic
 
+//
 // // https://talks.golang.org/2012/waza.slide
 // // http://play.golang.org/p/728flNkZ7P
 //
@@ -9,9 +10,6 @@ package main
 // 	"math/rand"
 // 	"time"
 // )
-//
-// // Allocater decides which Worker of a pool to perform jobs
-// type Allocater func() *Worker
 //
 // var nWorker = 100
 //

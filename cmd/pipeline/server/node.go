@@ -3,7 +3,7 @@ package server
 import (
 	"log"
 
-	"bitbucket.org/bign8/pipelines"
+	"github.com/bign8/pipelines"
 )
 
 // Part ...
