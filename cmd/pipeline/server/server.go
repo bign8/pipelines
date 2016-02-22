@@ -164,7 +164,10 @@ func (s *Server) handleLoad(m *nats.Msg) {
 	// TODO: accept URL addresses
 	// TODO: Parse bitbucket requests... convert a to b
 	//   a: bitbucket.org/bign8/pipelines/sample/web
-	//   b: bitbucket.org/bign8/pipelines/raw/master/sample/web
+	//   b: https://bitbucket.org/bign8/pipelines/raw/master/sample/web/pipeline.yml
+	// TODO: Parse github requests... convert a to b
+	//   a: github.com/bign8/pipelines/sample/web
+	//   b: https://github.com/bign8/pipelines/raw/master/sample/web/pipeline.yml
 	// log.Printf("Loading Config: %s", m.Data)
 	// resp, err := http.Get("http://" + string(m.Data) + "/pipeline.yml")
 	// if err != nil {
