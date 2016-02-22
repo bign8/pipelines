@@ -1,6 +1,6 @@
 package server
 
-// AgentManager deals with all agent managment schemes
+// AgentManager deals with all agent management schemes
 type AgentManager struct {
 	ap AgentPool
 }

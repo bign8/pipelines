@@ -29,7 +29,7 @@ func (c *Crawler) ProcessRecord(record *pipelines.Record) error {
 
 	// TODO: find all links
 	links := make([]string, 2)
-	for _ = range links {
+	for range links {
 		pipelines.EmitRecord("index_request", record.New("http://asdf.com/asdf.txt"))
 	}
 

@@ -44,7 +44,7 @@ package attic
 // 	return worker.Send(record)
 // }
 //
-// // Graph is the base type for the overall comitted graph
+// // Graph is the base type for the overall committed graph
 // type Graph struct {
 // 	Nodes    map[NodeID]*Node
 // 	Edges    map[StreamID][]NodeID
