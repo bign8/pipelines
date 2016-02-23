@@ -17,7 +17,7 @@ func runFix(cmd *Command, args []string) {
 	if len(args) < 2 {
 		panic(errors.New("Not enough arguments provided"))
 	}
-	nc, err := nats.Connect(nats.DefaultURL)
+	nc, err := nats.Connect(nats.DefaultURL, nats.Name("CLI Send"))
 	defer nc.Close()
 	if err != nil {
 		panic(err)

@@ -26,6 +26,9 @@ func StartManager(conn *nats.Conn, done <-chan struct{}) chan<- RouteRequest {
 			case request := <-c:
 				go m.routeRequest(request)
 			case <-done:
+				for _, sub := range m.subs {
+					log.Printf("Subscripiton unsub: %s : %v", sub.Subject, sub.Unsubscribe())
+				}
 				return
 			}
 		}
@@ -39,6 +42,7 @@ type Manager struct {
 	pool     *Pool
 	conn     *nats.Conn
 	agentIDs map[string]bool
+	subs     []*nats.Subscription
 }
 
 // NewManager constructs a new AgentManager
@@ -46,11 +50,11 @@ func NewManager(conn *nats.Conn) *Manager {
 	m := &Manager{
 		pool: new(Pool),
 		conn: conn,
+		subs: make([]*nats.Subscription, 1),
 	}
 
 	conn.SetReconnectHandler(m.natsReconnect)
-
-	conn.Subscribe("pipelines.server.agent.start", m.handleStart)
+	m.subs[0], _ = conn.Subscribe("pipelines.server.agent.start", m.handleStart)
 
 	return m
 }

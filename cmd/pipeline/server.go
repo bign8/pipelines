@@ -19,5 +19,5 @@ func runServer(cmd *Command, args []string) {
 	}
 	url := args[0]
 	log.Printf("Connecting to server: %s", url)
-	<-server.NewServer(url).Done
+	server.Run(url)
 }

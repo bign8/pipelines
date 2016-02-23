@@ -3,6 +3,8 @@ package server
 import (
 	"fmt"
 	"log"
+	"os"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -13,12 +15,19 @@ import (
 	"github.com/nats-io/nats"
 )
 
+// Run is the primary starter for the server
+func Run(url string) {
+	<-NewServer(url).Done
+	runtime.Goexit()
+}
+
 // Server ...
 type Server struct {
 	Done     chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
 	requestQ chan<- agent.RouteRequest
+	subs     []*nats.Subscription
 }
 
 // NewServer ...
@@ -26,6 +35,7 @@ func NewServer(url string) *Server {
 	server := &Server{
 		Done:    make(chan struct{}),
 		Streams: make(map[string][]*Node),
+		subs:    make([]*nats.Subscription, 4),
 	}
 
 	var err error
@@ -42,10 +52,10 @@ func NewServer(url string) *Server {
 	server.conn.SetErrorHandler(server.natsError)
 
 	// Set message handlers
-	server.conn.Subscribe("pipelines.server.emit", server.handleEmit)
-	server.conn.Subscribe("pipelines.server.note", server.handleNote)
-	server.conn.Subscribe("pipelines.server.kill", server.handleKill)
-	server.conn.Subscribe("pipelines.server.load", server.handleLoad)
+	server.subs[0], _ = server.conn.Subscribe("pipelines.server.emit", server.handleEmit)
+	server.subs[1], _ = server.conn.Subscribe("pipelines.server.note", server.handleNote)
+	server.subs[2], _ = server.conn.Subscribe("pipelines.server.kill", server.handleKill)
+	server.subs[3], _ = server.conn.Subscribe("pipelines.server.load", server.handleLoad)
 	return server
 }
 
@@ -96,7 +106,7 @@ func (s *Server) handleEmit(m *nats.Msg) {
 
 // handleKill deals with a kill request
 func (s *Server) handleKill(m *nats.Msg) {
-	close(s.Done)
+	s.Shutdown()
 }
 
 // handleNote deals with a pool notification
@@ -156,4 +166,17 @@ func (s *Server) handleLoad(m *nats.Msg) {
 	}
 
 	fmt.Printf("Full Config: %+v\n", s)
+}
+
+// Shutdown closes all active subscriptions and kills process
+func (s *Server) Shutdown() {
+	close(s.Done)
+	for _, sub := range s.subs {
+		log.Printf("Subscription unsub: %s : %v", sub.Subject, sub.Unsubscribe())
+	}
+	runtime.Gosched()
+	s.conn.Close()
+	runtime.Gosched()
+	log.Printf("Exiting Cleanly with %d Go-Routines", runtime.NumGoroutine())
+	os.Exit(0)
 }
