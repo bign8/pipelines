@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"log"
-	"os"
 	"runtime"
 	"strings"
 
@@ -17,12 +16,12 @@ import (
 
 // Run is the primary starter for the server
 func Run(url string) {
-	<-NewServer(url).Done
-	runtime.Goexit()
+	<-NewServer(url).Running
 }
 
 // Server ...
 type Server struct {
+	Running  chan struct{}
 	Done     chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
@@ -33,6 +32,7 @@ type Server struct {
 // NewServer ...
 func NewServer(url string) *Server {
 	server := &Server{
+		Running: make(chan struct{}),
 		Done:    make(chan struct{}),
 		Streams: make(map[string][]*Node),
 		subs:    make([]*nats.Subscription, 4),
@@ -174,9 +174,8 @@ func (s *Server) Shutdown() {
 	for _, sub := range s.subs {
 		log.Printf("Subscription unsub: %s : %v", sub.Subject, sub.Unsubscribe())
 	}
-	runtime.Gosched()
+	runtime.Gosched() // Run close handlers tied to s.Done
 	s.conn.Close()
-	runtime.Gosched()
-	log.Printf("Exiting Cleanly with %d Go-Routines", runtime.NumGoroutine())
-	os.Exit(0)
+	runtime.Gosched() // Wait for deferred routines to exit cleanly
+	close(s.Running)
 }
