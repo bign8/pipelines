@@ -3,9 +3,36 @@ package agent
 import (
 	"log"
 
+	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/utils"
 	"github.com/nats-io/nats"
 )
+
+// RouteRequest is the primary input to the pool manager
+type RouteRequest struct {
+	Service string
+	Key     string
+	Payload *pipelines.Emit
+}
+
+// StartManager deals with the internal managment of agents
+func StartManager(conn *nats.Conn, done <-chan struct{}) chan<- RouteRequest {
+	c := make(chan RouteRequest)
+	m := NewManager(conn)
+
+	go func() {
+		for {
+			select {
+			case request := <-c:
+				go m.routeRequest(request)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return c
+}
 
 // Manager deals with all agent management schemes
 type Manager struct {
@@ -52,4 +79,8 @@ func (m *Manager) natsReconnect(nc *nats.Conn) {
 	// 		log.Printf("Agent Found: %s", agentID)
 	// 	}
 	// }
+}
+
+func (m *Manager) routeRequest(request RouteRequest) {
+	// TODO: manage routeRequests
 }

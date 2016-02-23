@@ -8,15 +8,17 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/bign8/pipelines"
+	"github.com/bign8/pipelines/cmd/pipeline/server/agent"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
 // Server ...
 type Server struct {
-	Done    chan struct{}
-	Streams map[string][]*Node
-	conn    *nats.Conn
+	Done     chan struct{}
+	Streams  map[string][]*Node
+	conn     *nats.Conn
+	requestQ chan<- agent.RouteRequest
 }
 
 // NewServer ...
@@ -31,6 +33,7 @@ func NewServer(url string) *Server {
 	if err != nil {
 		panic(err)
 	}
+	server.requestQ = agent.StartManager(server.conn, server.Done)
 
 	// Set error handlers
 	server.conn.SetClosedHandler(server.natsClose)
@@ -81,13 +84,13 @@ func (s *Server) handleEmit(m *nats.Msg) {
 	// Find Clients
 	nodes, ok := s.Streams[emit.Stream]
 	if !ok {
-		log.Printf("cannot find destination")
+		log.Printf("cannot find destination: %s", emit.Stream)
 		return
 	}
 
 	// Send emit data to each node
 	for _, node := range nodes {
-		node.Queue <- emit
+		go node.processEmit(emit, s.requestQ)
 	}
 }
 
