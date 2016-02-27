@@ -10,77 +10,71 @@ import (
 
 	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/cmd/pipeline/server/agent"
-	"github.com/bign8/pipelines/utils/subscription"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
-// Run is the primary starter for the server
-func Run(url string) {
-	<-NewServer(url).Running
-}
-
 // Server ...
-type Server struct {
+type server struct {
 	Running  chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
 	requestQ chan<- agent.RouteRequest
 }
 
-// NewServer ...
-func NewServer(url string) *Server {
-	server := &Server{
+// Run starts the Pipeline Server
+func Run(url string) {
+	s := &server{
 		Running: make(chan struct{}),
 		Streams: make(map[string][]*Node),
 	}
 
+	// startup connection and various server helpers
 	var err error
-	server.conn, err = nats.Connect(url, nats.Name("Pipeline Server"))
+	s.conn, err = nats.Connect(url, nats.Name("Pipeline Server"))
 	if err != nil {
 		panic(err)
 	}
-	go subscription.Manage(server.conn)
-	server.requestQ = agent.StartManager(server.conn)
+	// go subscription.Manage(s.conn)
+	s.requestQ = agent.StartManager(s.conn)
 
-	// Set error handlers
-	server.conn.SetClosedHandler(server.natsClose)
-	server.conn.SetDisconnectHandler(server.natsDisconnect)
-	server.conn.SetReconnectHandler(server.natsReconnect)
-	server.conn.SetErrorHandler(server.natsError)
+	// // Set error handlers
+	// s.conn.SetClosedHandler(s.natsClose)
+	// s.conn.SetDisconnectHandler(s.natsDisconnect)
+	// s.conn.SetReconnectHandler(s.natsReconnect)
+	// s.conn.SetErrorHandler(s.natsError)
 
 	// Set message handlers
-	subscription.New("pipelines.server.emit", server.handleEmit)
-	subscription.New("pipelines.server.note", server.handleNote)
-	subscription.New("pipelines.server.kill", server.handleKill)
-	subscription.New("pipelines.server.load", server.handleLoad)
-	return server
+	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
+	s.conn.Subscribe("pipelines.server.kill", func(m *nats.Msg) { s.Shutdown() })
+	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
+	<-s.Running
 }
 
-// natsClose handles NATS close calls
-func (s *Server) natsClose(nc *nats.Conn) {
-	log.Printf("TODO: NATS Close")
-}
-
-// natsDisconnect handles NATS close calls
-func (s *Server) natsDisconnect(nc *nats.Conn) {
-	log.Printf("TODO: NATS Disconnect")
-}
-
-// natsReconnect handles NATS close calls
-func (s *Server) natsReconnect(nc *nats.Conn) {
-	log.Printf("TODO: NATS Reconnect")
-}
-
-// natsError handles NATS close calls
-func (s *Server) natsError(nc *nats.Conn, sub *nats.Subscription, err error) {
-	log.Printf("NATS Error conn: %+v", nc)
-	log.Printf("NATS Error subs: %+v", sub)
-	log.Printf("NATS Error erro: %+v", err)
-}
+// // natsClose handles NATS close calls
+// func (s *server) natsClose(nc *nats.Conn) {
+// 	log.Printf("TODO: NATS Close")
+// }
+//
+// // natsDisconnect handles NATS close calls
+// func (s *server) natsDisconnect(nc *nats.Conn) {
+// 	log.Printf("TODO: NATS Disconnect")
+// }
+//
+// // natsReconnect handles NATS close calls
+// func (s *server) natsReconnect(nc *nats.Conn) {
+// 	log.Printf("TODO: NATS Reconnect")
+// }
+//
+// // natsError handles NATS close calls
+// func (s *server) natsError(nc *nats.Conn, sub *nats.Subscription, err error) {
+// 	log.Printf("NATS Error conn: %+v", nc)
+// 	log.Printf("NATS Error subs: %+v", sub)
+// 	log.Printf("NATS Error erro: %+v", err)
+// }
 
 // handleEmit deals with clients emits requests
-func (s *Server) handleEmit(m *nats.Msg) {
+func (s *server) handleEmit(m *nats.Msg) {
 	var emit *pipelines.Emit
 
 	// Unmarshal message
@@ -102,17 +96,6 @@ func (s *Server) handleEmit(m *nats.Msg) {
 	}
 }
 
-// handleKill deals with a kill request
-func (s *Server) handleKill(m *nats.Msg) {
-	s.Shutdown()
-}
-
-// handleNote deals with a pool notification
-func (s *Server) handleNote(m *nats.Msg) {
-	// TODO
-	log.Printf("Handling Note: %+v", m)
-}
-
 type dataType struct {
 	Name  string            `yaml:"Name"`
 	Type  string            `yaml:"Type"`
@@ -122,7 +105,7 @@ type dataType struct {
 }
 
 // handleLoad downloads and processes a pipeline configuration file
-func (s *Server) handleLoad(m *nats.Msg) {
+func (s *server) handleLoad(m *nats.Msg) {
 	log.Printf("Handling Load Request: %s", m.Reply)
 
 	// TODO: accept URL addresses
@@ -167,9 +150,7 @@ func (s *Server) handleLoad(m *nats.Msg) {
 }
 
 // Shutdown closes all active subscriptions and kills process
-func (s *Server) Shutdown() {
-	subscription.Kill()
-	runtime.Gosched() // Run close handlers tied to s.Done
+func (s *server) Shutdown() {
 	s.conn.Close()
 	runtime.Gosched() // Wait for deferred routines to exit cleanly
 	close(s.Running)

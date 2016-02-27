@@ -5,7 +5,6 @@ import (
 
 	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/utils"
-	"github.com/bign8/pipelines/utils/subscription"
 	"github.com/nats-io/nats"
 )
 
@@ -45,7 +44,7 @@ func NewManager(conn *nats.Conn) *Manager {
 	}
 
 	conn.SetReconnectHandler(m.natsReconnect)
-	subscription.New("pipelines.server.agent.start", m.handleStart)
+	conn.Subscribe("pipelines.server.agent.start", m.handleStart)
 
 	return m
 }
