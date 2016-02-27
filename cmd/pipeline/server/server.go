@@ -10,6 +10,7 @@ import (
 
 	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/cmd/pipeline/server/agent"
+	"github.com/bign8/pipelines/utils/subscription"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
@@ -22,20 +23,16 @@ func Run(url string) {
 // Server ...
 type Server struct {
 	Running  chan struct{}
-	Done     chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
 	requestQ chan<- agent.RouteRequest
-	subs     []*nats.Subscription
 }
 
 // NewServer ...
 func NewServer(url string) *Server {
 	server := &Server{
 		Running: make(chan struct{}),
-		Done:    make(chan struct{}),
 		Streams: make(map[string][]*Node),
-		subs:    make([]*nats.Subscription, 4),
 	}
 
 	var err error
@@ -43,7 +40,8 @@ func NewServer(url string) *Server {
 	if err != nil {
 		panic(err)
 	}
-	server.requestQ = agent.StartManager(server.conn, server.Done)
+	go subscription.Manage(server.conn)
+	server.requestQ = agent.StartManager(server.conn)
 
 	// Set error handlers
 	server.conn.SetClosedHandler(server.natsClose)
@@ -52,10 +50,10 @@ func NewServer(url string) *Server {
 	server.conn.SetErrorHandler(server.natsError)
 
 	// Set message handlers
-	server.subs[0], _ = server.conn.Subscribe("pipelines.server.emit", server.handleEmit)
-	server.subs[1], _ = server.conn.Subscribe("pipelines.server.note", server.handleNote)
-	server.subs[2], _ = server.conn.Subscribe("pipelines.server.kill", server.handleKill)
-	server.subs[3], _ = server.conn.Subscribe("pipelines.server.load", server.handleLoad)
+	subscription.New("pipelines.server.emit", server.handleEmit)
+	subscription.New("pipelines.server.note", server.handleNote)
+	subscription.New("pipelines.server.kill", server.handleKill)
+	subscription.New("pipelines.server.load", server.handleLoad)
 	return server
 }
 
@@ -159,7 +157,7 @@ func (s *Server) handleLoad(m *nats.Msg) {
 
 	// Initialize nodes into the server
 	for name, config := range nodes {
-		node := NewNode(name, config.In, s.Done)
+		node := NewNode(name, config.In)
 		for streamName := range config.In {
 			s.Streams[streamName] = append(s.Streams[streamName], node)
 		}
@@ -170,10 +168,7 @@ func (s *Server) handleLoad(m *nats.Msg) {
 
 // Shutdown closes all active subscriptions and kills process
 func (s *Server) Shutdown() {
-	close(s.Done)
-	for _, sub := range s.subs {
-		log.Printf("Subscription unsub: %s : %v", sub.Subject, sub.Unsubscribe())
-	}
+	subscription.Kill()
 	runtime.Gosched() // Run close handlers tied to s.Done
 	s.conn.Close()
 	runtime.Gosched() // Wait for deferred routines to exit cleanly

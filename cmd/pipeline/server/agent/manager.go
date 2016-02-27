@@ -5,6 +5,7 @@ import (
 
 	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/utils"
+	"github.com/bign8/pipelines/utils/subscription"
 	"github.com/nats-io/nats"
 )
 
@@ -16,21 +17,13 @@ type RouteRequest struct {
 }
 
 // StartManager deals with the internal managment of agents
-func StartManager(conn *nats.Conn, done <-chan struct{}) chan<- RouteRequest {
+func StartManager(conn *nats.Conn) chan<- RouteRequest {
 	c := make(chan RouteRequest)
 	m := NewManager(conn)
 
 	go func() {
-		for {
-			select {
-			case request := <-c:
-				go m.routeRequest(request)
-			case <-done:
-				for _, sub := range m.subs {
-					log.Printf("Subscripiton unsub: %s : %v", sub.Subject, sub.Unsubscribe())
-				}
-				return
-			}
+		for request := range c {
+			go m.routeRequest(request)
 		}
 	}()
 
@@ -42,7 +35,6 @@ type Manager struct {
 	pool     *Pool
 	conn     *nats.Conn
 	agentIDs map[string]bool
-	subs     []*nats.Subscription
 }
 
 // NewManager constructs a new AgentManager
@@ -50,11 +42,10 @@ func NewManager(conn *nats.Conn) *Manager {
 	m := &Manager{
 		pool: new(Pool),
 		conn: conn,
-		subs: make([]*nats.Subscription, 1),
 	}
 
 	conn.SetReconnectHandler(m.natsReconnect)
-	m.subs[0], _ = conn.Subscribe("pipelines.server.agent.start", m.handleStart)
+	subscription.New("pipelines.server.agent.start", m.handleStart)
 
 	return m
 }

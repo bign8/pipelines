@@ -14,7 +14,7 @@ type Node struct {
 }
 
 // NewNode starts a new node to work with
-func NewNode(name string, mine map[string]string, done <-chan struct{}) *Node {
+func NewNode(name string, mine map[string]string) *Node {
 	n := &Node{
 		Name: name,
 		mine: make(map[string]Miner),
