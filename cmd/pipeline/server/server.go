@@ -35,7 +35,6 @@ func Run(url string) {
 	if err != nil {
 		panic(err)
 	}
-	// go subscription.Manage(s.conn)
 	s.requestQ = agent.StartManager(s.conn)
 
 	// // Set error handlers
@@ -75,10 +74,11 @@ func Run(url string) {
 
 // handleEmit deals with clients emits requests
 func (s *server) handleEmit(m *nats.Msg) {
-	var emit *pipelines.Emit
+	var emit pipelines.Emit
+	log.Printf("message: %s", m.Data)
 
 	// Unmarshal message
-	if err := proto.Unmarshal(m.Data, emit); err != nil {
+	if err := proto.Unmarshal(m.Data, &emit); err != nil {
 		log.Printf("unmarshaling error: %v", err)
 		return
 	}
@@ -92,7 +92,7 @@ func (s *server) handleEmit(m *nats.Msg) {
 
 	// Send emit data to each node
 	for _, node := range nodes {
-		go node.processEmit(emit, s.requestQ)
+		go node.processEmit(&emit, s.requestQ)
 	}
 }
 

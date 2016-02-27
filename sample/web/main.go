@@ -3,8 +3,10 @@ package main
 import "github.com/bign8/pipelines"
 
 func main() {
+	index := NewIndexer()
 	pipelines.Register("crawl", NewCrawler())
-	pipelines.Register("index", NewIndexer())
+	pipelines.Register("index", index)
 	pipelines.Register("store", NewStorer())
-	pipelines.Run()
+	index.start()
+	// pipelines.Run()
 }

@@ -56,19 +56,22 @@ type Computation interface {
 
 // EmitRecord transmits a record to the system
 func EmitRecord(stream string, record *Record) error {
-	data, err := proto.Marshal(record)
+	emit := &Emit{
+		Record: record,
+		Stream: stream,
+	}
+	data, err := proto.Marshal(emit)
 	if err != nil {
 		return err
 	}
-	conn.Publish("pipelines.server.emit", data)
-	return nil
+	return conn.Publish("pipelines.server.emit", data)
 }
 
 // Run is the primary sleep for the operating loop
 func Run() {
-	for true {
-		// burn
-	}
+	// for true {
+	// 	// burn
+	// }
 	return
 }
 

@@ -17,10 +17,9 @@ func (p Pool) Len() int {
 func (p *Pool) Push(x interface{}) {
 	a := *p
 	n := len(a)
-	a = a[0 : n+1]
 	item := x.(*Agent)
+	*p = append(a, item)
 	item.index = n
-	a[n] = item
 }
 
 // Pop gets an item from the heap

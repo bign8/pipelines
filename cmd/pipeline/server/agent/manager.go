@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"container/heap"
 	"log"
 
 	"github.com/bign8/pipelines"
@@ -22,7 +23,7 @@ func StartManager(conn *nats.Conn) chan<- RouteRequest {
 
 	go func() {
 		for request := range c {
-			go m.routeRequest(request)
+			m.routeRequest(request)
 		}
 	}()
 
@@ -31,16 +32,20 @@ func StartManager(conn *nats.Conn) chan<- RouteRequest {
 
 // Manager deals with all agent management schemes
 type Manager struct {
-	pool     *Pool
-	conn     *nats.Conn
-	agentIDs map[string]bool
+	pool      *Pool
+	conn      *nats.Conn
+	agentIDs  map[string]bool
+	activeMap map[string]map[string]*Agent // Service -> Key -> Agent
 }
 
 // NewManager constructs a new AgentManager
 func NewManager(conn *nats.Conn) *Manager {
+	pool := Pool(make([]*Agent, 0))
 	m := &Manager{
-		pool: new(Pool),
-		conn: conn,
+		pool:      &pool,
+		conn:      conn,
+		agentIDs:  make(map[string]bool),
+		activeMap: make(map[string]map[string]*Agent),
 	}
 
 	conn.SetReconnectHandler(m.natsReconnect)
@@ -60,6 +65,8 @@ func (m *Manager) handleStart(msg *nats.Msg) {
 	}
 	m.conn.Publish(msg.Reply, []byte(guid))
 	m.agentIDs[guid] = true
+	agent := Agent{ID: guid}
+	heap.Push(m.pool, &agent)
 }
 
 func (m *Manager) natsReconnect(nc *nats.Conn) {
@@ -73,8 +80,22 @@ func (m *Manager) natsReconnect(nc *nats.Conn) {
 	// 		log.Printf("Agent Found: %s", agentID)
 	// 	}
 	// }
+	log.Printf("Handling NATS Reconnect")
 }
 
 func (m *Manager) routeRequest(request RouteRequest) {
-	// TODO: manage routeRequests
+	keyMAP, ok := m.activeMap[request.Service]
+	if !ok {
+		keyMAP = make(map[string]*Agent)
+		m.activeMap[request.Service] = keyMAP
+	}
+	agent, ok := keyMAP[request.Key]
+	if !ok {
+		agent = heap.Pop(m.pool).(*Agent)
+	}
+	agent.processing++
+	m.conn.Publish(agent.EmitAddr(), []byte(request.Payload.String()))
+	if !ok {
+		heap.Push(m.pool, agent)
+	}
 }

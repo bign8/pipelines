@@ -6,3 +6,8 @@ type Agent struct {
 	processing int
 	index      int
 }
+
+// EmitAddr is the physical address to send a message to an Agent
+func (a *Agent) EmitAddr() string {
+	return "pipeliens.agent." + a.ID + ".emit"
+}

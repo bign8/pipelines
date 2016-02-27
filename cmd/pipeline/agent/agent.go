@@ -25,20 +25,25 @@ func NewAgent(nc *nats.Conn) *Agent {
 	var msg *nats.Msg
 	err := errors.New("starting")
 	details := []byte(getIPAddrDebugString())
+	ctr := 1
 	for err != nil {
-		msg, err = nc.Request("pipelines.server.agent.start", details, time.Second)
+		log.Printf("Requesting UUID: Timeout %ds", ctr)
+		msg, err = nc.Request("pipelines.server.agent.start", details, time.Second*time.Duration(ctr))
+		if ctr < 10 {
+			ctr *= 2
+		}
 	}
 	log.Printf("Assigned UUID: %s", msg.Data)
 
 	// Subscribe to agent items
 	prefix := "pipeliens.agent." + string(msg.Data) + "."
-	nc.Subscribe(prefix+"msg", agent.handleAgent)
+	nc.Subscribe(prefix+"emit", agent.handleEmit)
 	nc.Subscribe(prefix+"ping", agent.handlePing)
 
 	return agent
 }
 
-func (a *Agent) handleAgent(m *nats.Msg) {
+func (a *Agent) handleEmit(m *nats.Msg) {
 	log.Printf("Dealing with AGENT msg: %+v", m)
 }
 

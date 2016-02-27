@@ -9,7 +9,7 @@ Nodes: # Dictates where node level configurations are stored
 ---
 Name: index
 Type: Node
-CMD: run_index.sh SOMETHING
+CMD: go run sample/web/*.go
 
 In:
   index_request: "@"
@@ -19,14 +19,14 @@ Out:
 ---
 Name: store
 Type: Node
-CMD: run_store.sh SOMETHING
+CMD: go run sample/web/*.go
 
 In:
   store_request: "*"
 ---
 Name: crawl
 Type: Node
-CMD: run_crawl.sh SOMETHING
+CMD: go run sample/web/*.go
 
 In:
   crawl_request: "*"
