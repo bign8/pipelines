@@ -153,6 +153,7 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 		// TODO: end locking call on pool
 
 		if err != nil {
+			log.Printf("starting Worker: %s", err)
 			return err
 		}
 	}

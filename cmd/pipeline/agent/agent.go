@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os/exec"
 	"time"
@@ -68,16 +69,19 @@ func (a *Agent) handleSearch(m *nats.Msg) {
 }
 
 func (a *Agent) handleStart(m *nats.Msg) {
-	log.Printf("Dealing with Start msg: %+v", m)
-
 	var startWorker pipelines.StartWorker
 	if err := proto.Unmarshal(m.Data, &startWorker); err != nil {
 		log.Printf("unmarshal error: %s", err)
+		a.conn.Publish(m.Reply, []byte(fmt.Sprintf("-unmarshal error: %s", err)))
 		return
 	}
 
 	log.Printf("worker request: %+v", startWorker)
+	go a.startWorker(startWorker)
+	a.conn.Publish(m.Reply, []byte("+")) // All good in the hood
+}
 
+func (a *Agent) startWorker(startWorker pipelines.StartWorker) {
 	// TODO: use GOB do detect argument lists
 	cmd := exec.Command("go", "run", "sample/web/main.go", "sample/web/crawl.go", "sample/web/index.go", "sample/web/store.go")
 	cmd.Env = []string{
@@ -88,10 +92,10 @@ func (a *Agent) handleStart(m *nats.Msg) {
 	}
 	bits, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Command Error: %s\n%s", err, bits)
+		log.Printf("%s Error: %s\n%s", startWorker.Service, err, bits)
 		return
 	}
-	log.Printf("Program Output:\n%s", bits)
+	log.Printf("%s Output:\n%s", startWorker.Service, bits)
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

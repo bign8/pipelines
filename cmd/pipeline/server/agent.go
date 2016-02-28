@@ -1,6 +1,10 @@
 package server
 
 import (
+	"fmt"
+	"log"
+	"time"
+
 	"github.com/bign8/pipelines"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
@@ -32,9 +36,20 @@ func (a *Agent) StartWorker(conn *nats.Conn, request pipelines.Work, guid string
 		return nil, err
 	}
 
-	conn.Publish(a.startAddr(), data)
+	msg, err := conn.Request(a.startAddr(), data, 5*time.Second) // TODO: tighten the constraint here
+	if err != nil {
+		return nil, err
+	}
+	if string(msg.Data[0]) != "+" {
+		return nil, fmt.Errorf("agent start: %s", msg.Data[1:])
+	}
+	log.Printf("Agent Started: %+v", work)
 
-	worker := Worker{ID: "xxx"}
+	worker := Worker{
+		ID:      guid,
+		Service: request.Service,
+		Key:     request.Key,
+	}
 	if err = worker.Ping(conn); err != nil {
 		return nil, err
 	}

@@ -110,16 +110,20 @@ func Run() {
 
 	// Automated start ... start conn the correct way an things...
 	log.Printf("Service: %s; Key: %s; GUID: %s", service, key, guid)
+	ctx := context.WithValue(context.TODO(), "key", key)
 	initConn()
 	comp, ok := instances[service]
 	if !ok {
 		log.Fatalf("Service not found in cmd: %s", service)
 	}
-	ctx, err := comp.Start(context.TODO())
+	ctx, err := comp.Start(ctx)
 	if err != nil && err != ErrNoStartNeeded {
 		log.Fatalf("Service could not start: %s : %s", service, err)
 	}
 	conn.Subscribe("pipelines.node."+service+"."+key, instances.handleWork)
+	conn.Subscribe("pipelines.node."+guid+".ping", func(m *nats.Msg) {
+		conn.Publish(m.Reply, []byte("PONG"))
+	})
 	<-ctx.Done()
 	time.Sleep(10)
 	return
