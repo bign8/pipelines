@@ -39,7 +39,7 @@ func (w *Worker) Ping(conn *nats.Conn) error {
 	attempts := 10 // TODO: nail this down
 	err := errors.New("starting")
 	for err != nil {
-		_, err = conn.Request("pipelines.node."+w.ID+".ping", []byte("PING"), time.Second)
+		_, err = conn.Request("pipelines.node."+w.ID+".ping", []byte("PING"), 100*time.Millisecond)
 		attempts--
 		if err != nil && attempts < 0 {
 			return errors.New("Cannot find started worker...")

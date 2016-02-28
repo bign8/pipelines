@@ -21,6 +21,8 @@ func (i *Indexer) ProcessRecord(record *pipelines.Record) error {
 	if _, ok := (*i)[record.Data]; !ok {
 		(*i)[record.Data] = true
 		pipelines.EmitRecord("crawl_request", record)
+	} else {
+		log.Printf("Duplicate Detected: %s", record.Data)
 	}
 	return nil
 }

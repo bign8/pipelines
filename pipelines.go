@@ -109,7 +109,6 @@ func Run() {
 	}
 
 	// Automated start ... start conn the correct way an things...
-	log.Printf("Service: %s; Key: %s; GUID: %s", service, key, guid)
 	ctx := context.WithValue(context.TODO(), "key", key)
 	initConn()
 	comp, ok := instances[service]
