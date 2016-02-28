@@ -8,4 +8,15 @@ Cloud based DAG infrastructure with inter-node release.
 [![GitHub release](http://img.shields.io/github/release/bign8/pipelines.svg)](https://github.com/bign8/pipelines/releases)
 
 
-TODO
+## POC Instructions
+
+```sh
+$ gnatsd -m 8222
+$ nats-top
+$ export PATH=$PATH:$GOPATH/bin
+$ go install ./...
+$ pipeline server
+$ pipeline agent  # As many agents as you would like
+$ pipeline load sample/web
+$ pipeline send crawl_request https://en.wikipedia.org/wiki/Main_page
+```
