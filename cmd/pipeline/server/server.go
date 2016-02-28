@@ -156,6 +156,7 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 			log.Printf("starting Worker: %s", err)
 			return err
 		}
+		s.workers[request.Service][request.Key] = worker
 	}
 	return worker.Process(s.conn, request.Record)
 }

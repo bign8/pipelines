@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/bign8/pipelines"
 	"golang.org/x/net/context"
@@ -43,6 +44,7 @@ func (c *Crawler) ProcessRecord(record *pipelines.Record) error {
 	}
 
 	pipelines.EmitRecord("store_request", record.New(record.Data))
+	time.Sleep(2 * time.Second)
 	c.done()
 	return nil
 }
