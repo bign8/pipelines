@@ -9,18 +9,20 @@ import (
 // Node is a graph node
 type Node struct {
 	Name string
+	CMD  string
 	mine map[string]Miner // Key: source stream
 }
 
 // NewNode starts a new node to work with
-func NewNode(name string, mine map[string]string) *Node {
+func NewNode(name string, config dataType) *Node {
 	n := &Node{
 		Name: name,
+		CMD:  config.CMD,
 		mine: make(map[string]Miner),
 	}
 
 	// Generate miner functions
-	for key, mineConfig := range mine {
+	for key, mineConfig := range config.In {
 		n.mine[key] = NewMiner(mineConfig)
 	}
 	return n
@@ -38,4 +40,8 @@ func (n *Node) processEmit(emit *pipelines.Emit, response chan<- RouteRequest) {
 		Key:     mineFn(emit.Record.Data),
 		Payload: emit,
 	}
+}
+
+func (n *Node) String() string {
+	return n.Name + " '" + n.CMD + "'"
 }

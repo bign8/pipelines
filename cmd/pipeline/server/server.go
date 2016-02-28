@@ -2,7 +2,6 @@ package server
 
 import (
 	"container/heap"
-	"fmt"
 	"log"
 	"runtime"
 	"strings"
@@ -201,8 +200,6 @@ type dataType struct {
 
 // handleLoad downloads and processes a pipeline configuration file
 func (s *server) handleLoad(m *nats.Msg) {
-	log.Printf("Handling Load Request: %s", m.Reply)
-
 	// TODO: accept URL addresses
 	// TODO: Parse bitbucket requests... convert a to b
 	//   a: bitbucket.org/bign8/pipelines/sample/web
@@ -235,13 +232,13 @@ func (s *server) handleLoad(m *nats.Msg) {
 
 	// Initialize nodes into the server
 	for name, config := range nodes {
-		node := NewNode(name, config.In)
+		node := NewNode(name, config)
 		for streamName := range config.In {
 			s.Streams[streamName] = append(s.Streams[streamName], node)
 		}
 	}
 
-	fmt.Printf("Full Config: %+v\n", s)
+	log.Printf("Full Config: %+v\n", s.Streams)
 }
 
 // Shutdown closes all active subscriptions and kills process
