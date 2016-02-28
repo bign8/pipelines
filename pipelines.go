@@ -124,6 +124,18 @@ func Run() {
 	conn.Subscribe("pipelines.node."+guid+".ping", func(m *nats.Msg) {
 		conn.Publish(m.Reply, []byte("PONG"))
 	})
+	conn.Subscribe("pipelines.node.search", func(m *nats.Msg) {
+		data := StartWorker{
+			Service: service,
+			Key:     key,
+			Guid:    guid,
+		}
+		bits, err := proto.Marshal(&data)
+		if err != nil {
+			// TODO: what to do here
+		}
+		conn.Publish(m.Reply, bits)
+	})
 	<-ctx.Done()
 	time.Sleep(10)
 	return

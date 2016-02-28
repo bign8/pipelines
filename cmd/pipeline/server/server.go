@@ -61,9 +61,11 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
+	s.conn.Subscribe("pipelines.server.node.find", s.handleNodeFind)
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
+	s.conn.PublishRequest("pipelines.node.search", "pipelines.server.node.find", []byte(""))
 	<-s.Running
 }
 
@@ -97,6 +99,26 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 	agent := Agent{ID: guid}
 	heap.Push(s.pool, &agent)
 	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+// handleNodeFind adds an existing agent to the server's knowledge
+func (s *server) handleNodeFind(msg *nats.Msg) {
+	var info pipelines.StartWorker
+	if err := proto.Unmarshal(msg.Data, &info); err != nil {
+		// TODO: handle the error
+		return
+	}
+	log.Printf("Worker Found: %s %s %s", info.Service, info.Key, info.Guid)
+	keyMAP, ok := s.workers[info.Service]
+	if !ok {
+		keyMAP = make(map[string]*Worker)
+		s.workers[info.Service] = keyMAP
+	}
+	keyMAP[info.Key] = &Worker{
+		ID:      info.Guid,
+		Service: info.Service,
+		Key:     info.Key,
+	}
 }
 
 func (s *server) natsReconnect(nc *nats.Conn) {
