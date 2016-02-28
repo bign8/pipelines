@@ -14,19 +14,12 @@ import (
 	"github.com/nats-io/nats"
 )
 
-// RouteRequest is the primary input to the pool manager
-type RouteRequest struct {
-	Service string
-	Key     string
-	Payload *pipelines.Emit
-}
-
 // Server ...
 type server struct {
 	Running  chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
-	requestQ chan<- RouteRequest
+	requestQ chan<- pipelines.Work
 	pool     *Pool
 	IDs      map[string]bool
 	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
@@ -51,7 +44,7 @@ func Run(url string) {
 	}
 
 	// Start Request manager queue
-	q := make(chan RouteRequest)
+	q := make(chan pipelines.Work)
 	go func() {
 		for request := range q {
 			s.routeRequest(request)
@@ -140,7 +133,7 @@ func (s *server) natsReconnect(nc *nats.Conn) {
 	log.Printf("Handling NATS Reconnect")
 }
 
-func (s *server) routeRequest(request RouteRequest) (err error) {
+func (s *server) routeRequest(request pipelines.Work) (err error) {
 	keyMAP, ok := s.workers[request.Service]
 	if !ok {
 		keyMAP = make(map[string]*Worker)
@@ -163,7 +156,7 @@ func (s *server) routeRequest(request RouteRequest) (err error) {
 			return err
 		}
 	}
-	return worker.Process(s.conn, request.Payload.Record)
+	return worker.Process(s.conn, request.Record)
 }
 
 // handleEmit deals with clients emits requests

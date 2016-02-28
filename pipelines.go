@@ -28,9 +28,9 @@ func (a api) handleWork(m *nats.Msg) {
 	}
 
 	// Find worker
-	c, ok := a[work.Worker]
+	c, ok := a[work.Service]
 	if !ok {
-		log.Printf("worker not found: %v", work.Worker)
+		log.Printf("service not found: %v", work.Service)
 		return
 	}
 	c.ProcessRecord(work.GetRecord())

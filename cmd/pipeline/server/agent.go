@@ -19,7 +19,7 @@ func (a *Agent) startAddr() string {
 }
 
 // StartWorker spins up a new worker on a specific agent
-func (a *Agent) StartWorker(conn *nats.Conn, request RouteRequest, guid string) (*Worker, error) {
+func (a *Agent) StartWorker(conn *nats.Conn, request pipelines.Work, guid string) (*Worker, error) {
 	work := pipelines.StartWorker{
 		Service: request.Service,
 		Key:     request.Key,

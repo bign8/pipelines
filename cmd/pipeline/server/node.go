@@ -29,16 +29,16 @@ func NewNode(name string, config dataType) *Node {
 }
 
 // processEmit deals with a single emit in a deferred context
-func (n *Node) processEmit(emit *pipelines.Emit, response chan<- RouteRequest) {
+func (n *Node) processEmit(emit *pipelines.Emit, response chan<- pipelines.Work) {
 	mineFn, ok := n.mine[emit.Stream]
 	if !ok {
 		log.Printf("%s unable to mine for data on stream: %+v", n.Name, emit)
 		return
 	}
-	response <- RouteRequest{
+	response <- pipelines.Work{
 		Service: n.Name,
 		Key:     mineFn(emit.Record.Data),
-		Payload: emit,
+		Record:  emit.Record,
 	}
 }
 
