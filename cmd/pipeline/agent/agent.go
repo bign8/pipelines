@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/bign8/pipelines"
+	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
@@ -65,6 +67,14 @@ func (a *Agent) handleSearch(m *nats.Msg) {
 
 func (a *Agent) handleStart(m *nats.Msg) {
 	log.Printf("Dealing with Start msg: %+v", m)
+
+	var startWorker pipelines.StartWorker
+	if err := proto.Unmarshal(m.Data, &startWorker); err != nil {
+		log.Printf("unmarshal error: %s", err)
+		return
+	}
+
+	log.Printf("worker request: %+v", startWorker)
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

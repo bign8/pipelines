@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/bign8/pipelines"
-	"github.com/bign8/pipelines/cmd/pipeline/server/agent"
 )
 
 // Node is a graph node
@@ -28,13 +27,13 @@ func NewNode(name string, mine map[string]string) *Node {
 }
 
 // processEmit deals with a single emit in a deferred context
-func (n *Node) processEmit(emit *pipelines.Emit, response chan<- agent.RouteRequest) {
+func (n *Node) processEmit(emit *pipelines.Emit, response chan<- RouteRequest) {
 	mineFn, ok := n.mine[emit.Stream]
 	if !ok {
 		log.Printf("%s unable to mine for data on stream: %+v", n.Name, emit)
 		return
 	}
-	response <- agent.RouteRequest{
+	response <- RouteRequest{
 		Service: n.Name,
 		Key:     mineFn(emit.Record.Data),
 		Payload: emit,

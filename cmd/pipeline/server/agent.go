@@ -1,4 +1,4 @@
-package agent
+package server
 
 import (
 	"github.com/bign8/pipelines"
@@ -19,12 +19,12 @@ func (a *Agent) startAddr() string {
 }
 
 // StartWorker spins up a new worker on a specific agent
-func (a *Agent) StartWorker(conn *nats.Conn, request RouteRequest) (*Worker, error) {
+func (a *Agent) StartWorker(conn *nats.Conn, request RouteRequest, guid string) (*Worker, error) {
 	work := pipelines.StartWorker{
 		Service: request.Service,
 		Key:     request.Key,
 		Command: "go run sample/web/*.go", // TODO: load this from configuration stuff
-		Guid:    "xxx",                    // TODO: get this from manager
+		Guid:    guid,
 	}
 
 	data, err := proto.Marshal(&work)

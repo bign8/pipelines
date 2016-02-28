@@ -1,6 +1,7 @@
 package server
 
 import (
+	"container/heap"
 	"fmt"
 	"log"
 	"runtime"
@@ -9,24 +10,38 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/bign8/pipelines"
-	"github.com/bign8/pipelines/cmd/pipeline/server/agent"
+	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
+
+// RouteRequest is the primary input to the pool manager
+type RouteRequest struct {
+	Service string
+	Key     string
+	Payload *pipelines.Emit
+}
 
 // Server ...
 type server struct {
 	Running  chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
-	requestQ chan<- agent.RouteRequest
+	requestQ chan<- RouteRequest
+	pool     *Pool
+	IDs      map[string]bool
+	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
 }
 
 // Run starts the Pipeline Server
 func Run(url string) {
+	pool := Pool(make([]*Agent, 0))
 	s := &server{
 		Running: make(chan struct{}),
 		Streams: make(map[string][]*Node),
+		pool:    &pool,
+		IDs:     make(map[string]bool),
+		workers: make(map[string]map[string]*Worker),
 	}
 
 	// startup connection and various server helpers
@@ -35,42 +50,122 @@ func Run(url string) {
 	if err != nil {
 		panic(err)
 	}
-	s.requestQ = agent.StartManager(s.conn)
 
-	// // Set error handlers
-	// s.conn.SetClosedHandler(s.natsClose)
-	// s.conn.SetDisconnectHandler(s.natsDisconnect)
-	// s.conn.SetReconnectHandler(s.natsReconnect)
-	// s.conn.SetErrorHandler(s.natsError)
+	// Start Request manager queue
+	q := make(chan RouteRequest)
+	go func() {
+		for request := range q {
+			s.routeRequest(request)
+		}
+	}()
+	s.requestQ = q
+
+	// Set error handlers
+	s.conn.SetReconnectHandler(s.natsReconnect)
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
 	s.conn.Subscribe("pipelines.server.kill", func(m *nats.Msg) { s.Shutdown() })
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
+	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
+	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
+	s.conn.Subscribe("pipelines.server.worker.start", s.handleWorkerStart)
+
+	// Announce startup
+	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
 	<-s.Running
 }
 
-// // natsClose handles NATS close calls
-// func (s *server) natsClose(nc *nats.Conn) {
-// 	log.Printf("TODO: NATS Close")
-// }
-//
-// // natsDisconnect handles NATS close calls
-// func (s *server) natsDisconnect(nc *nats.Conn) {
-// 	log.Printf("TODO: NATS Disconnect")
-// }
-//
-// // natsReconnect handles NATS close calls
-// func (s *server) natsReconnect(nc *nats.Conn) {
-// 	log.Printf("TODO: NATS Reconnect")
-// }
-//
-// // natsError handles NATS close calls
-// func (s *server) natsError(nc *nats.Conn, sub *nats.Subscription, err error) {
-// 	log.Printf("NATS Error conn: %+v", nc)
-// 	log.Printf("NATS Error subs: %+v", sub)
-// 	log.Printf("NATS Error erro: %+v", err)
-// }
+func (s *server) genGUID() (guid string) {
+	ok := true
+	for ok {
+		guid = utils.RandString(40)
+		_, ok = s.IDs[guid]
+	}
+	s.IDs[guid] = true
+	return
+}
+
+// handleAgentStart adds a new agent to a pool configuration
+func (s *server) handleAgentStart(msg *nats.Msg) {
+	log.Printf("Handling Agent Start Request: %s", msg.Data)
+	guid := s.genGUID()
+	agent := Agent{ID: guid}
+	heap.Push(s.pool, &agent)
+	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+// handleAgentFind adds an existing agent to a pool configuration
+func (s *server) handleAgentFind(msg *nats.Msg) {
+	log.Printf("Handling Agent Found Request: %s", msg.Data)
+	guid := string(msg.Data)
+	if _, ok := s.IDs[guid]; ok {
+		guid = utils.RandString(40)
+	}
+	s.IDs[guid] = true
+	agent := Agent{ID: guid}
+	heap.Push(s.pool, &agent)
+	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+// handleWorkerStart processes a worker start request
+func (s *server) handleWorkerStart(msg *nats.Msg) {
+	log.Printf("Handling Worker Start Request: %s", msg.Data)
+
+	// pull apart work start data
+	service := "apples"
+	key := "grapes"
+
+	guid := s.genGUID()
+	worker := Worker{ID: guid}
+	keyMap, ok := s.workers[service]
+	if !ok {
+		keyMap = make(map[string]*Worker)
+		s.workers[service] = keyMap
+	}
+	keyMap[key] = &worker
+	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+func (s *server) natsReconnect(nc *nats.Conn) {
+	// Request for agents to reconnect
+	// for agentID := range s.agentIDs {
+	// 	msg, err := s.conn.Request("pipelines.agent."+agentID+".ping", []byte("PING"), time.Second)
+	// 	if err != nil || string(msg.Data) != "PONG" {
+	// 		log.Printf("Agent Deleted: %s", agentID)
+	// 		delete(s.agentIDs, agentID)
+	// 	} else {
+	// 		log.Printf("Agent Found: %s", agentID)
+	// 	}
+	// }
+	log.Printf("Handling NATS Reconnect")
+}
+
+func (s *server) routeRequest(request RouteRequest) (err error) {
+	keyMAP, ok := s.workers[request.Service]
+	if !ok {
+		keyMAP = make(map[string]*Worker)
+		s.workers[request.Service] = keyMAP
+	}
+	worker, ok := keyMAP[request.Key]
+	if !ok {
+		guid := s.genGUID()
+
+		// TODO: start locking call on pool
+		agent := heap.Pop(s.pool).(*Agent)
+		worker, err = agent.StartWorker(s.conn, request, guid)
+		if err == nil {
+			agent.processing++
+		}
+		heap.Push(s.pool, agent)
+		// TODO: end locking call on pool
+
+		if err != nil {
+			return err
+		}
+	}
+	return worker.Process(s.conn, request.Payload.Record)
+}
 
 // handleEmit deals with clients emits requests
 func (s *server) handleEmit(m *nats.Msg) {
