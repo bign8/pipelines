@@ -43,7 +43,7 @@ func (a *Agent) StartWorker(conn *nats.Conn, request pipelines.Work, guid string
 	if string(msg.Data[0]) != "+" {
 		return nil, fmt.Errorf("agent start: %s", msg.Data[1:])
 	}
-	log.Printf("Agent Started: %+v", work)
+	log.Printf("Agent[%s...]: Starting %+v", a.ID[:10], work)
 
 	worker := Worker{
 		ID:      guid,

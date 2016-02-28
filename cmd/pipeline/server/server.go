@@ -61,7 +61,6 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
-	s.conn.Subscribe("pipelines.server.worker.start", s.handleWorkerStart)
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
@@ -80,7 +79,7 @@ func (s *server) genGUID() (guid string) {
 
 // handleAgentStart adds a new agent to a pool configuration
 func (s *server) handleAgentStart(msg *nats.Msg) {
-	log.Printf("Handling Agent Start Request: %s", msg.Data)
+	log.Printf("Agent Start: %s", msg.Data)
 	guid := s.genGUID()
 	agent := Agent{ID: guid}
 	heap.Push(s.pool, &agent)
@@ -89,7 +88,7 @@ func (s *server) handleAgentStart(msg *nats.Msg) {
 
 // handleAgentFind adds an existing agent to a pool configuration
 func (s *server) handleAgentFind(msg *nats.Msg) {
-	log.Printf("Handling Agent Found Request: %s", msg.Data)
+	log.Printf("Agent Found: %s", msg.Data)
 	guid := string(msg.Data)
 	if _, ok := s.IDs[guid]; ok {
 		guid = utils.RandString(40)
@@ -97,25 +96,6 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 	s.IDs[guid] = true
 	agent := Agent{ID: guid}
 	heap.Push(s.pool, &agent)
-	s.conn.Publish(msg.Reply, []byte(guid))
-}
-
-// handleWorkerStart processes a worker start request
-func (s *server) handleWorkerStart(msg *nats.Msg) {
-	log.Printf("Handling Worker Start Request: %s", msg.Data)
-
-	// pull apart work start data
-	service := "apples"
-	key := "grapes"
-
-	guid := s.genGUID()
-	worker := Worker{ID: guid}
-	keyMap, ok := s.workers[service]
-	if !ok {
-		keyMap = make(map[string]*Worker)
-		s.workers[service] = keyMap
-	}
-	keyMap[key] = &worker
 	s.conn.Publish(msg.Reply, []byte(guid))
 }
 
@@ -164,18 +144,18 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 // handleEmit deals with clients emits requests
 func (s *server) handleEmit(m *nats.Msg) {
 	var emit pipelines.Emit
-	log.Printf("message: %s", m.Data)
 
 	// Unmarshal message
 	if err := proto.Unmarshal(m.Data, &emit); err != nil {
 		log.Printf("unmarshaling error: %v", err)
 		return
 	}
+	log.Printf("Emit [%s]: %s", emit.Stream, emit.Record.Data)
 
 	// Find Clients
 	nodes, ok := s.Streams[emit.Stream]
 	if !ok {
-		log.Printf("cannot find destination: %s", emit.Stream)
+		log.Printf("Err  [%s]: cannot find destination", emit.Stream)
 		return
 	}
 
@@ -233,7 +213,7 @@ func (s *server) handleLoad(m *nats.Msg) {
 		}
 	}
 
-	log.Printf("Full Config: %+v\n", s.Streams)
+	log.Printf("Config: %+v\n", s.Streams)
 }
 
 // Shutdown closes all active subscriptions and kills process

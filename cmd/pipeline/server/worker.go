@@ -19,7 +19,7 @@ type Worker struct {
 
 // Process takes a record and processes in on a worker
 func (w *Worker) Process(conn *nats.Conn, record *pipelines.Record) error {
-	log.Printf("Processing: %v", record)
+	log.Printf("Send [%s %s]: %s", w.Service, w.Key, record.Data)
 	work := pipelines.Work{
 		Record:  record,
 		Service: w.Service,
@@ -41,8 +41,7 @@ func (w *Worker) Ping(conn *nats.Conn) error {
 	for err != nil {
 		_, err = conn.Request("pipelines.node."+w.ID+".ping", []byte("PING"), time.Second)
 		attempts--
-		log.Printf("ping: %s", err)
-		if attempts < 0 {
+		if err != nil && attempts < 0 {
 			return errors.New("Cannot find started worker...")
 		}
 	}
