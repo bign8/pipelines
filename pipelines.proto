@@ -26,6 +26,14 @@ message Timer {
   uint64 stamp = 3;      // Time to execute the time
 }
 
+
+message StartWorker {
+  string service = 1;
+  string key = 2;
+  string command = 3;
+  string guid = 4;
+}
+
 // message Graph {
 //  map<string, string> edges = 1;
 // }

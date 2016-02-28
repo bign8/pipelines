@@ -10,8 +10,10 @@ import (
 
 // Agent is the base type for an agent
 type Agent struct {
-	Done chan struct{}
-	conn *nats.Conn
+	ID           string
+	Done         chan struct{}
+	conn         *nats.Conn
+	prefixedSubs []*nats.Subscription
 }
 
 // NewAgent constructs a new agent... duh!!!
@@ -34,17 +36,35 @@ func NewAgent(nc *nats.Conn) *Agent {
 		}
 	}
 	log.Printf("Assigned UUID: %s", msg.Data)
+	agent.ID = string(msg.Data)
 
 	// Subscribe to agent items
-	prefix := "pipeliens.agent." + string(msg.Data) + "."
-	nc.Subscribe(prefix+"emit", agent.handleEmit)
-	nc.Subscribe(prefix+"ping", agent.handlePing)
+	prefix := "pipeliens.agent." + agent.ID + "."
+	sub, _ := nc.Subscribe(prefix+"start", agent.handleStart)
+	agent.prefixedSubs = append(agent.prefixedSubs, sub)
+	sub, _ = nc.Subscribe(prefix+"ping", agent.handlePing)
+	agent.prefixedSubs = append(agent.prefixedSubs, sub)
+
+	nc.Subscribe("pipelines.agent.search", agent.handleSearch)
 
 	return agent
 }
 
-func (a *Agent) handleEmit(m *nats.Msg) {
-	log.Printf("Dealing with AGENT msg: %+v", m)
+func (a *Agent) handleSearch(m *nats.Msg) {
+	m, err := a.conn.Request("pipelines.server.agent.find", []byte(a.ID), time.Second)
+	if err != nil {
+		log.Printf("Error in Agent Search Request: %s", err)
+	}
+	newGUID := string(m.Data)
+	if newGUID != a.ID {
+		log.Printf("TODO: release al existing subscriptions and start with new ID: %s -> %s", a.ID, newGUID)
+	} else {
+		log.Printf("Re-found UUID: %s", a.ID)
+	}
+}
+
+func (a *Agent) handleStart(m *nats.Msg) {
+	log.Printf("Dealing with Start msg: %+v", m)
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

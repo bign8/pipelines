@@ -31,7 +31,7 @@ func Run(url string) {
 
 	// startup connection and various server helpers
 	var err error
-	s.conn, err = nats.Connect(url, nats.Name("Pipeline Server"))
+	s.conn, err = nats.Connect(url, nats.Name("Server"))
 	if err != nil {
 		panic(err)
 	}

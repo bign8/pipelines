@@ -18,7 +18,7 @@ func runAgent(cmd *Command, args []string) {
 		args = append(args, nats.DefaultURL)
 	}
 	log.Printf("Connecting to server: %s", args[0])
-	nc, err := nats.Connect(args[0])
+	nc, err := nats.Connect(args[0], nats.Name("Agent"))
 	defer nc.Close()
 	if err != nil {
 		panic(err)

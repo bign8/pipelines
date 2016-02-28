@@ -88,7 +88,7 @@ func (r *Record) New(data string) *Record {
 func initConn() {
 	if conn == nil {
 		var err error
-		conn, err = nats.Connect(nats.DefaultURL)
+		conn, err = nats.Connect(nats.DefaultURL, nats.Name("Node"))
 		if err != nil {
 			panic(err)
 		}

@@ -1,5 +1,11 @@
 package agent
 
+import (
+	"container/heap"
+
+	"github.com/nats-io/nats"
+)
+
 // Pool is the primary pool of Agents
 type Pool []*Agent
 
@@ -37,4 +43,15 @@ func (p Pool) Swap(i, j int) {
 	p[i], p[j] = p[j], p[i]
 	p[i].index = i
 	p[j].index = j
+}
+
+// StartWorker fires up a worker on the least loaded agent
+func (p *Pool) StartWorker(conn *nats.Conn, request RouteRequest) (*Worker, error) {
+	agent := heap.Pop(p).(*Agent)
+	worker, err := agent.StartWorker(conn, request)
+	if err == nil {
+		agent.processing++
+	}
+	heap.Push(p, agent)
+	return worker, err
 }
