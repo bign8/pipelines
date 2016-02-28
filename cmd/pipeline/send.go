@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log"
 
+	"github.com/bign8/pipelines"
+	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
@@ -23,5 +25,15 @@ func runFix(cmd *Command, args []string) {
 		panic(err)
 	}
 	log.Printf("Sending data: %v", args)
-	nc.Publish(args[0], []byte(args[1]))
+
+	emit := pipelines.Emit{
+		Record: pipelines.NewRecord(args[1]),
+		Stream: args[0],
+	}
+
+	bits, err := proto.Marshal(&emit)
+	if err != nil {
+		log.Fatalf("proto.Marshal err: %s", err)
+	}
+	nc.Publish("pipelines.server.emit", bits)
 }

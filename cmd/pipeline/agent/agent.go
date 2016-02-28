@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"log"
+	"os/exec"
 	"time"
 
 	"github.com/bign8/pipelines"
@@ -16,6 +17,7 @@ type Agent struct {
 	Done         chan struct{}
 	conn         *nats.Conn
 	prefixedSubs []*nats.Subscription
+	// workers      map[string]
 }
 
 // NewAgent constructs a new agent... duh!!!
@@ -75,6 +77,21 @@ func (a *Agent) handleStart(m *nats.Msg) {
 	}
 
 	log.Printf("worker request: %+v", startWorker)
+
+	// TODO: use GOB do detect argument lists
+	cmd := exec.Command("go", "run", "sample/web/main.go", "sample/web/crawl.go", "sample/web/index.go", "sample/web/store.go")
+	cmd.Env = []string{
+		"PIPELINE_SERVICE=" + startWorker.Service,
+		"PIPELINE_KEY=" + startWorker.Key,
+		"PIPELINE_GUID=" + startWorker.Guid,
+		"GOPATH=" + "/Users/nathanwoods/workspaces/go", // TODO: read this from environment
+	}
+	bits, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Command Error: %s\n%s", err, bits)
+		return
+	}
+	log.Printf("Program Output:\n%s", bits)
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

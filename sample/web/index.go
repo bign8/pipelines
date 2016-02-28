@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bign8/pipelines"
+	"golang.org/x/net/context"
 )
 
 // Indexer is the indexer type
@@ -26,7 +27,8 @@ func (i *Indexer) ProcessRecord(record *pipelines.Record) error {
 	return nil
 }
 
-func (i *Indexer) start() error {
+// Start fires the base start data
+func (i *Indexer) Start(ctx context.Context) (context.Context, error) {
 	for {
 		record := pipelines.Record{
 			CorrelationID: uint64(rand.Int63()),
@@ -36,7 +38,7 @@ func (i *Indexer) start() error {
 		log.Printf("Sending Initial EMIT! %d, %d, %s", record.CorrelationID, record.Guid, record.Data)
 		err := pipelines.EmitRecord("crawl_request", &record)
 		if err != nil {
-			return err
+			return ctx, err
 		}
 		time.Sleep(5 * time.Second)
 	}

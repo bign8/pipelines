@@ -5,10 +5,19 @@ import (
 	"net/http"
 
 	"github.com/bign8/pipelines"
+	"golang.org/x/net/context"
 )
 
 // Crawler is the actual crawler type
-type Crawler struct{}
+type Crawler struct {
+	done context.CancelFunc
+}
+
+// Start does nothing
+func (c *Crawler) Start(ctx context.Context) (context.Context, error) {
+	ctx, c.done = context.WithCancel(ctx)
+	return ctx, pipelines.ErrNoStartNeeded
+}
 
 // ProcessTimer does some work
 func (c *Crawler) ProcessTimer(timer *pipelines.Timer) error {
@@ -34,6 +43,7 @@ func (c *Crawler) ProcessRecord(record *pipelines.Record) error {
 	}
 
 	pipelines.EmitRecord("store_request", record.New(record.Data))
+	c.done()
 	return nil
 }
 
