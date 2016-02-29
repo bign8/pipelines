@@ -96,6 +96,7 @@ func (a *Agent) startWorker(startWorker pipelines.StartWorker) {
 		return
 	}
 	log.Printf("%s Output:\n%s", startWorker.Service, bits)
+	a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

@@ -8,10 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
+	"golang.org/x/net/context"
 )
 
 //go:generate protoc --go_out=. pipelines.proto
@@ -137,6 +136,7 @@ func Run() {
 	})
 	<-ctx.Done()
 	time.Sleep(10)
+	conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
 	return
 }
 
