@@ -3,6 +3,8 @@ package pipelines
 import (
 	"errors"
 	"log"
+	"net/http"
+	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
 	"os"
 	"strings"
 	"sync"
@@ -172,4 +174,8 @@ func initConn() {
 // Initialize internal memory model
 func init() {
 	instances = make(api)
+	go func() {
+		log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 }
