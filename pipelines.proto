@@ -9,7 +9,7 @@ message Emit {
 
 message Work {
   Record record = 1; // record to be processed
-  string worker = 2; // type of worker to operate on record with
+  string service = 2; // type of worker to operate on record with
   string key = 3;    // type of key to fan out on a particular worker with
 }
 
@@ -24,6 +24,13 @@ message Timer {
   uint64 correlationID = 1; // Global work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   uint64 stamp = 3;      // Time to execute the time
+}
+
+message StartWorker {
+  string service = 1;
+  string key = 2;
+  string command = 3;
+  string guid = 4;
 }
 
 // message Graph {

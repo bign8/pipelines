@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/bign8/pipelines"
+	"golang.org/x/net/context"
 )
 
 // Indexer is the indexer type
@@ -20,8 +21,15 @@ func (i *Indexer) ProcessRecord(record *pipelines.Record) error {
 	if _, ok := (*i)[record.Data]; !ok {
 		(*i)[record.Data] = true
 		pipelines.EmitRecord("crawl_request", record)
+	} else {
+		log.Printf("Duplicate Detected: %s", record.Data)
 	}
 	return nil
+}
+
+// Start fires the base start data
+func (i *Indexer) Start(ctx context.Context) (context.Context, error) {
+	return ctx, pipelines.ErrNoStartNeeded
 }
 
 // NewIndexer creates a new indexer object

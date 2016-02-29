@@ -1,5 +1,7 @@
 package server
 
+import "github.com/bign8/pipelines/utils"
+
 // Miner is a message miner
 type Miner func(string) string
 
@@ -22,8 +24,7 @@ func constMiner(_ string) string {
 }
 
 func randMiner(_ string) string {
-	uuid, _ := newUUID()
-	return uuid
+	return utils.RandString(40)
 }
 
 func makeMiner(config string) Miner {

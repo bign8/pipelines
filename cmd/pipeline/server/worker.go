@@ -1,15 +1,49 @@
 package server
 
-import "github.com/bign8/pipelines"
+import (
+	"errors"
+	"log"
+	"time"
 
-// Worker is the in-memory representation of a remote worker
+	"github.com/bign8/pipelines"
+	"github.com/golang/protobuf/proto"
+	"github.com/nats-io/nats"
+)
+
+// Worker is a process started by an agent
 type Worker struct {
-	Queue chan<- *pipelines.Emit
+	ID      string
+	Service string
+	Key     string
 }
 
-// NewWorker generates a new remote worker.  Is a Synchronus call
-func NewWorker(n *Node) *Worker {
-	// TODO: build worker on remote host
-	// TODO: startup netchan
-	return &Worker{}
+// Process takes a record and processes in on a worker
+func (w *Worker) Process(conn *nats.Conn, record *pipelines.Record) error {
+	log.Printf("Send [%s %s]: %s", w.Service, w.Key, record.Data)
+	work := pipelines.Work{
+		Record:  record,
+		Service: w.Service,
+		Key:     w.Key,
+	}
+
+	bits, err := proto.Marshal(&work)
+	if err != nil {
+		return err
+	}
+
+	return conn.Publish("pipelines.node."+w.Service+"."+w.Key, bits)
+}
+
+// Ping verifys the server is alive and ready
+func (w *Worker) Ping(conn *nats.Conn) error {
+	attempts := 10 // TODO: nail this down
+	err := errors.New("starting")
+	for err != nil {
+		_, err = conn.Request("pipelines.node."+w.ID+".ping", []byte("PING"), 100*time.Millisecond)
+		attempts--
+		if err != nil && attempts < 0 {
+			return errors.New("Cannot find started worker...")
+		}
+	}
+	return nil
 }

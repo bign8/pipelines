@@ -1,152 +1,190 @@
 package server
 
 import (
-	"crypto/rand"
-	"fmt"
-	"io"
+	"container/heap"
 	"log"
+	"runtime"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v2"
 
 	"github.com/bign8/pipelines"
+	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
 
 // Server ...
-type Server struct {
-	Done     chan struct{}
+type server struct {
+	Running  chan struct{}
 	Streams  map[string][]*Node
 	conn     *nats.Conn
-	agentIDs map[string]bool
+	requestQ chan<- pipelines.Work
+	pool     *Pool
+	IDs      map[string]bool
+	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
 }
 
-// NewServer ...
-func NewServer(url string) *Server {
-	server := &Server{
-		Done:     make(chan struct{}),
-		Streams:  make(map[string][]*Node),
-		agentIDs: make(map[string]bool),
+// Run starts the Pipeline Server
+func Run(url string) {
+	pool := Pool(make([]*Agent, 0))
+	s := &server{
+		Running: make(chan struct{}),
+		Streams: make(map[string][]*Node),
+		pool:    &pool,
+		IDs:     make(map[string]bool),
+		workers: make(map[string]map[string]*Worker),
 	}
 
+	// startup connection and various server helpers
 	var err error
-	server.conn, err = nats.Connect(url, nats.Name("Pipeline Server"))
+	s.conn, err = nats.Connect(url, nats.Name("Server"))
 	if err != nil {
 		panic(err)
 	}
 
+	// Start Request manager queue
+	q := make(chan pipelines.Work)
+	go func() {
+		for request := range q {
+			s.routeRequest(request)
+		}
+	}()
+	s.requestQ = q
+
 	// Set error handlers
-	server.conn.SetClosedHandler(server.natsClose)
-	server.conn.SetDisconnectHandler(server.natsDisconnect)
-	server.conn.SetReconnectHandler(server.natsReconnect)
-	server.conn.SetErrorHandler(server.natsError)
+	s.conn.SetReconnectHandler(s.natsReconnect)
 
 	// Set message handlers
-	server.conn.Subscribe("pipelines.server.emit", server.handleEmit)
-	server.conn.Subscribe("pipelines.server.note", server.handleNote)
-	server.conn.Subscribe("pipelines.server.kill", server.handleKill)
-	server.conn.Subscribe("pipelines.server.load", server.handleLoad)
-	server.conn.Subscribe("pipelines.server.agent.start", server.handleAgentStart)
-	return server
+	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
+	s.conn.Subscribe("pipelines.server.kill", func(m *nats.Msg) { s.Shutdown() })
+	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
+	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
+	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
+	s.conn.Subscribe("pipelines.server.node.find", s.handleNodeFind)
+
+	// Announce startup
+	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
+	s.conn.PublishRequest("pipelines.node.search", "pipelines.server.node.find", []byte(""))
+	<-s.Running
 }
 
-// natsClose handles NATS close calls
-func (s *Server) natsClose(nc *nats.Conn) {
-	log.Printf("TODO: NATS Close")
+func (s *server) genGUID() (guid string) {
+	ok := true
+	for ok {
+		guid = utils.RandString(40)
+		_, ok = s.IDs[guid]
+	}
+	s.IDs[guid] = true
+	return
 }
 
-// natsDisconnect handles NATS close calls
-func (s *Server) natsDisconnect(nc *nats.Conn) {
-	log.Printf("TODO: NATS Disconnect")
+// handleAgentStart adds a new agent to a pool configuration
+func (s *server) handleAgentStart(msg *nats.Msg) {
+	log.Printf("Agent Start: %s", msg.Data)
+	guid := s.genGUID()
+	agent := Agent{ID: guid}
+	heap.Push(s.pool, &agent)
+	s.conn.Publish(msg.Reply, []byte(guid))
 }
 
-// natsReconnect handles NATS close calls
-func (s *Server) natsReconnect(nc *nats.Conn) {
-	log.Printf("TODO: NATS Reconnect")
-	for agentID := range s.agentIDs {
-		msg, err := s.conn.Request("pipelines.agent."+agentID+".ping", []byte("PING"), time.Second)
-		if err != nil || string(msg.Data) != "PONG" {
-			log.Printf("Agent Deleted: %s", agentID)
-			delete(s.agentIDs, agentID)
-		} else {
-			log.Printf("Agent Found: %s", agentID)
-		}
+// handleAgentFind adds an existing agent to a pool configuration
+func (s *server) handleAgentFind(msg *nats.Msg) {
+	log.Printf("Agent Found: %s", msg.Data)
+	guid := string(msg.Data)
+	if _, ok := s.IDs[guid]; ok {
+		guid = utils.RandString(40)
+	}
+	s.IDs[guid] = true
+	agent := Agent{ID: guid}
+	heap.Push(s.pool, &agent)
+	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+// handleNodeFind adds an existing agent to the server's knowledge
+func (s *server) handleNodeFind(msg *nats.Msg) {
+	var info pipelines.StartWorker
+	if err := proto.Unmarshal(msg.Data, &info); err != nil {
+		// TODO: handle the error
+		return
+	}
+	log.Printf("Worker Found: %s %s %s", info.Service, info.Key, info.Guid)
+	keyMAP, ok := s.workers[info.Service]
+	if !ok {
+		keyMAP = make(map[string]*Worker)
+		s.workers[info.Service] = keyMAP
+	}
+	keyMAP[info.Key] = &Worker{
+		ID:      info.Guid,
+		Service: info.Service,
+		Key:     info.Key,
 	}
 }
 
-// natsError handles NATS close calls
-func (s *Server) natsError(nc *nats.Conn, sub *nats.Subscription, err error) {
-	log.Printf("NATS Error conn: %+v", nc)
-	log.Printf("NATS Error subs: %+v", sub)
-	log.Printf("NATS Error erro: %+v", err)
+func (s *server) natsReconnect(nc *nats.Conn) {
+	// Request for agents to reconnect
+	// for agentID := range s.agentIDs {
+	// 	msg, err := s.conn.Request("pipelines.agent."+agentID+".ping", []byte("PING"), time.Second)
+	// 	if err != nil || string(msg.Data) != "PONG" {
+	// 		log.Printf("Agent Deleted: %s", agentID)
+	// 		delete(s.agentIDs, agentID)
+	// 	} else {
+	// 		log.Printf("Agent Found: %s", agentID)
+	// 	}
+	// }
+	log.Printf("Handling NATS Reconnect")
+}
+
+func (s *server) routeRequest(request pipelines.Work) (err error) {
+	keyMAP, ok := s.workers[request.Service]
+	if !ok {
+		keyMAP = make(map[string]*Worker)
+		s.workers[request.Service] = keyMAP
+	}
+	worker, ok := keyMAP[request.Key]
+	if !ok {
+		guid := s.genGUID()
+
+		// TODO: start locking call on pool
+		agent := heap.Pop(s.pool).(*Agent)
+		worker, err = agent.StartWorker(s.conn, request, guid)
+		if err == nil {
+			agent.processing++
+		}
+		heap.Push(s.pool, agent)
+		// TODO: end locking call on pool
+
+		if err != nil {
+			log.Printf("starting Worker: %s", err)
+			return err
+		}
+		s.workers[request.Service][request.Key] = worker
+	}
+	return worker.Process(s.conn, request.Record)
 }
 
 // handleEmit deals with clients emits requests
-func (s *Server) handleEmit(m *nats.Msg) {
-	var emit *pipelines.Emit
+func (s *server) handleEmit(m *nats.Msg) {
+	var emit pipelines.Emit
 
 	// Unmarshal message
-	if err := proto.Unmarshal(m.Data, emit); err != nil {
+	if err := proto.Unmarshal(m.Data, &emit); err != nil {
 		log.Printf("unmarshaling error: %v", err)
 		return
 	}
+	log.Printf("Emit [%s]: %s", emit.Stream, emit.Record.Data)
 
 	// Find Clients
 	nodes, ok := s.Streams[emit.Stream]
 	if !ok {
-		log.Printf("cannot find destination")
+		log.Printf("Err  [%s]: cannot find destination", emit.Stream)
 		return
 	}
 
 	// Send emit data to each node
 	for _, node := range nodes {
-		node.Queue <- emit
+		go node.processEmit(&emit, s.requestQ)
 	}
-}
-
-// handleKill deals with a kill request
-func (s *Server) handleKill(m *nats.Msg) {
-	close(s.Done)
-}
-
-// handleNote deals with a pool notification
-func (s *Server) handleNote(m *nats.Msg) {
-	// TODO
-	log.Printf("Handling Note: %+v", m)
-}
-
-// newUUID generates a random UUID according to RFC 4122
-func newUUID() (string, error) {
-	// http://play.golang.org/p/4FkNSiUDMg
-	uuid := make([]byte, 16)
-	n, err := io.ReadFull(rand.Reader, uuid)
-	if n != len(uuid) || err != nil {
-		return "", err
-	}
-	// variant bits; see section 4.1.1
-	uuid[8] = uuid[8]&^0xc0 | 0x80
-	// version 4 (pseudo-random); see section 4.1.3
-	uuid[6] = uuid[6]&^0xf0 | 0x40
-	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
-}
-
-// handleAgentStart adds a new agent to a pool configuration
-func (s *Server) handleAgentStart(m *nats.Msg) {
-	log.Printf("Handling Agent Start Request: %s", m.Data)
-	var err error
-	var guid string
-	ok := true
-	for ok {
-		guid, err = newUUID()
-		if err != nil {
-			panic(err)
-		}
-		_, ok = s.agentIDs[guid]
-	}
-	s.conn.Publish(m.Reply, []byte(guid))
-	s.agentIDs[guid] = true
 }
 
 type dataType struct {
@@ -158,9 +196,7 @@ type dataType struct {
 }
 
 // handleLoad downloads and processes a pipeline configuration file
-func (s *Server) handleLoad(m *nats.Msg) {
-	log.Printf("Handling Load Request: %s", m.Reply)
-
+func (s *server) handleLoad(m *nats.Msg) {
 	// TODO: accept URL addresses
 	// TODO: Parse bitbucket requests... convert a to b
 	//   a: bitbucket.org/bign8/pipelines/sample/web
@@ -193,11 +229,18 @@ func (s *Server) handleLoad(m *nats.Msg) {
 
 	// Initialize nodes into the server
 	for name, config := range nodes {
-		node := NewNode(name, config.In, s.Done)
+		node := NewNode(name, config)
 		for streamName := range config.In {
 			s.Streams[streamName] = append(s.Streams[streamName], node)
 		}
 	}
 
-	fmt.Printf("Full Config: %+v\n", s)
+	log.Printf("Config: %+v\n", s.Streams)
+}
+
+// Shutdown closes all active subscriptions and kills process
+func (s *server) Shutdown() {
+	s.conn.Close()
+	runtime.Gosched() // Wait for deferred routines to exit cleanly
+	close(s.Running)
 }
