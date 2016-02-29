@@ -2,37 +2,42 @@ syntax = "proto3";
 
 package pipelines;
 
+// Emit: nodes -> server
+// Data: server -> worker (server -> agent -> worker)
+// Work: server -> agent
+
 message Emit {
-  Record record = 1; // record emitted
+  Data record = 1; // record emitted
   string stream = 2; // stream record was emitted to
 }
 
-message Work {
-  Record record = 1; // record to be processed
-  string service = 2; // type of worker to operate on record with
-  string key = 3;    // type of key to fan out on a particular worker with
-}
-
-message Record {
+message Data {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
-  string data = 3;          // Actual data to be processed
+  string bits = 3;          // Actual data to be processed
 }
 
+message Work {
+  Data record = 1; // record to be processed
+  Node node = 2;
+}
+
+message Node {
+  string service = 1;
+  string key = 2;
+  string command = 3; // only needed for startup
+  State state = 4;
+}
+
+enum State {
+  PROD = 0;  // Active Production
+  BACK = 1;  // Roll-Back on failure
+  STAGE = 2; // Staging
+  DEV = 3;   // Developmental use
+}
 
 message Timer {
   uint64 correlationID = 1; // Global work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
-  uint64 stamp = 3;      // Time to execute the time
+  uint64 stamp = 3;         // Time to execute the time
 }
-
-message StartWorker {
-  string service = 1;
-  string key = 2;
-  string command = 3;
-  string guid = 4;
-}
-
-// message Graph {
-//  map<string, string> edges = 1;
-// }
