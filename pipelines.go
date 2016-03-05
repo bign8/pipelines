@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"log"
-	"net/http"
 	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
 	"os"
 	"strings"
@@ -30,9 +29,12 @@ var instances api
 type api map[string]Computation
 
 func (a api) handleWork(m *nats.Msg) {
-	var work Work
+	if m.Reply != "" {
+		conn.Publish(m.Reply, []byte("ACK"))
+	}
 
 	// Unmarshal message
+	var work Work
 	if err := proto.Unmarshal(m.Data, &work); err != nil {
 		log.Fatalf("unmarshaling error: %v", err)
 		return
@@ -183,8 +185,8 @@ func initConn() {
 // Initialize internal memory model
 func init() {
 	instances = make(api)
-	go func() {
-		log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	// go func() {
+	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
+	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
+	// }()
 }

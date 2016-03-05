@@ -79,6 +79,7 @@ func (c *Crawler) crawl(record *pipelines.Record, uri string) error {
 	}
 
 	// TODO: make this emit parallel if necessary
+	pipelines.EmitRecord("store_request", record.New(uri))
 	for link := range unique {
 		pipelines.EmitRecord("index_request", record.New(link))
 	}

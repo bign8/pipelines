@@ -21,16 +21,18 @@ type Agent struct {
 	inbox        chan *pipelines.Work
 	starting     chan *pipelines.Work
 	started      chan string
+	completing   chan bool
 }
 
 // NewAgent constructs a new agent... duh!!!
 func NewAgent(nc *nats.Conn) *Agent {
 	agent := &Agent{
-		Done:     make(chan struct{}),
-		conn:     nc,
-		inbox:    make(chan *pipelines.Work),
-		starting: make(chan *pipelines.Work),
-		started:  make(chan string),
+		Done:       make(chan struct{}),
+		conn:       nc,
+		inbox:      make(chan *pipelines.Work),
+		starting:   make(chan *pipelines.Work),
+		started:    make(chan string),
+		completing: make(chan bool),
 	}
 
 	// Find diling address for agent to listen to; TODO: make this suck less
@@ -59,22 +61,28 @@ func NewAgent(nc *nats.Conn) *Agent {
 
 	// Redis queue monitor
 	go func() {
+		const maxRunning = 10
+		var active = 0
 		var pending []*pipelines.Work
+		ticker := time.Tick(5 * time.Second)
 		for {
 			var first *pipelines.Work
 			var starting chan *pipelines.Work
-			if len(pending) > 0 {
+			if len(pending) > 0 && active < maxRunning {
 				first = pending[0]
 				starting = agent.starting
 			}
 
 			select {
 			case work := <-agent.inbox:
-				log.Printf("Getting work: %s", work)
 				pending = append(pending, work)
 			case starting <- first:
-				log.Printf("Sent work: %s", first)
 				pending = pending[1:]
+				active++
+			case <-agent.completing:
+				active--
+			case <-ticker:
+				log.Printf("Queue Depth: %d", len(pending))
 			}
 		}
 	}()
@@ -120,6 +128,12 @@ func (a *Agent) runWorker(work *pipelines.Work) {
 		return
 	}
 
+	msg, err := a.conn.Request("pipelines.node."+work.Service+"."+work.Key, bits, time.Second)
+	if err == nil && string(msg.Data) == "ACK" {
+		a.completing <- true
+		return
+	}
+
 	// TODO: use GOB do detect argument lists
 	cmd := exec.Command("go", "run", "sample/web/main.go", "sample/web/crawl.go", "sample/web/index.go", "sample/web/store.go")
 	cmd.Env = []string{
@@ -134,6 +148,7 @@ func (a *Agent) runWorker(work *pipelines.Work) {
 		return
 	}
 	log.Printf("%s Output:\n%s", work.Service, bits)
+	a.completing <- true
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

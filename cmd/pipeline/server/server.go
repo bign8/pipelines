@@ -24,8 +24,8 @@ type server struct {
 	pool     *Pool
 	pmux     sync.RWMutex
 	IDs      map[string]bool
-	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
-	agents   map[string]map[string]*Agent
+	// workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
+	agents map[string]map[string]*Agent
 }
 
 // Run starts the Pipeline Server
@@ -36,8 +36,8 @@ func Run(url string) {
 		Streams: make(map[string][]*Node),
 		pool:    &pool,
 		IDs:     make(map[string]bool),
-		workers: make(map[string]map[string]*Worker),
-		agents:  make(map[string]map[string]*Agent),
+		// workers: make(map[string]map[string]*Worker),
+		agents: make(map[string]map[string]*Agent),
 	}
 
 	// startup connection and various server helpers
@@ -122,12 +122,12 @@ func (s *server) handleAgentStop(msg *nats.Msg) {
 // handleWorkerStop deals with when an agent finishes running a worker
 func (s *server) handleWorkerStop(msg *nats.Msg) {
 	log.Printf("Worker Stop: %s", msg.Data)
-	data := strings.Split(string(msg.Data), ".")
-	keyLookup, ok := s.workers[data[0]]
-	if !ok {
-		return
-	}
-	delete(keyLookup, data[1])
+	// data := strings.Split(string(msg.Data), ".")
+	// // keyLookup, ok := s.workers[data[0]]
+	// if !ok {
+	// 	return
+	// }
+	// delete(keyLookup, data[1])
 }
 
 // handleAgentFind adds an existing agent to a pool configuration
@@ -151,16 +151,16 @@ func (s *server) handleNodeFind(msg *nats.Msg) {
 		return
 	}
 	log.Printf("Worker Found: %s %s %s", info.Service, info.Key, info.Guid)
-	keyMAP, ok := s.workers[info.Service]
-	if !ok {
-		keyMAP = make(map[string]*Worker)
-		s.workers[info.Service] = keyMAP
-	}
-	keyMAP[info.Key] = &Worker{
-		ID:      info.Guid,
-		Service: info.Service,
-		Key:     info.Key,
-	}
+	// keyMAP, ok := s.workers[info.Service]
+	// if !ok {
+	// 	keyMAP = make(map[string]*Worker)
+	// 	s.workers[info.Service] = keyMAP
+	// }
+	// keyMAP[info.Key] = &Worker{
+	// 	ID:      info.Guid,
+	// 	Service: info.Service,
+	// 	Key:     info.Key,
+	// }
 }
 
 func (s *server) natsReconnect(nc *nats.Conn) {
@@ -178,12 +178,14 @@ func (s *server) natsReconnect(nc *nats.Conn) {
 }
 
 func (s *server) routeRequest(request pipelines.Work) (err error) {
-	keyMAP, ok := s.agents[request.Service]
-	if !ok {
-		keyMAP = make(map[string]*Agent)
-		s.agents[request.Service] = keyMAP
-	}
-	agent, ok := keyMAP[request.Key]
+	// keyMAP, ok := s.agents[request.Service]
+	// if !ok {
+	// 	keyMAP = make(map[string]*Agent)
+	// 	s.agents[request.Service] = keyMAP
+	// }
+	// agent, ok := keyMAP[request.Key]
+	var agent *Agent
+	ok := false
 
 	// Worker is not active, need to pass to least loaded agent
 	if !ok {
@@ -194,7 +196,7 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 		heap.Push(s.pool, agent)
 		s.pmux.Unlock()
 
-		s.agents[request.Service][request.Key] = agent
+		// s.agents[request.Service][request.Key] = agent
 	}
 
 	// Fix load on worker if necessary
