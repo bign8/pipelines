@@ -25,6 +25,7 @@ type server struct {
 	pmux     sync.RWMutex
 	IDs      map[string]bool
 	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
+	agents   map[string]map[string]*Agent
 }
 
 // Run starts the Pipeline Server
@@ -36,6 +37,7 @@ func Run(url string) {
 		pool:    &pool,
 		IDs:     make(map[string]bool),
 		workers: make(map[string]map[string]*Worker),
+		agents:  make(map[string]map[string]*Agent),
 	}
 
 	// startup connection and various server helpers
@@ -49,8 +51,8 @@ func Run(url string) {
 	q := make(chan pipelines.Work)
 	go func() {
 		for request := range q {
-			// go s.routeRequest(request)
-			s.routeRequest(request)
+			go s.routeRequest(request)
+			// s.routeRequest(request)
 		}
 	}()
 	s.requestQ = q
@@ -176,39 +178,37 @@ func (s *server) natsReconnect(nc *nats.Conn) {
 }
 
 func (s *server) routeRequest(request pipelines.Work) (err error) {
-	keyMAP, ok := s.workers[request.Service]
+	keyMAP, ok := s.agents[request.Service]
 	if !ok {
-		keyMAP = make(map[string]*Worker)
-		s.workers[request.Service] = keyMAP
+		keyMAP = make(map[string]*Agent)
+		s.agents[request.Service] = keyMAP
 	}
-	worker, ok := keyMAP[request.Key]
-	if !ok {
-		guid := s.genGUID()
+	agent, ok := keyMAP[request.Key]
 
+	// Worker is not active, need to pass to least loaded agent
+	if !ok {
 		// TODO: use Peak and Fix here
 		s.pmux.Lock()
-		agent := heap.Pop(s.pool).(*Agent)
+		agent = heap.Pop(s.pool).(*Agent)
 		agent.processing++
 		heap.Push(s.pool, agent)
 		s.pmux.Unlock()
 
-		worker, err = agent.StartWorker(s.conn, request, guid)
-
-		// Fix load on worker if necessary
-		if err == nil {
-			s.pmux.Lock()
-			agent.processing--
-			heap.Fix(s.pool, agent.index)
-			s.pmux.Unlock()
-		}
-
-		if err != nil {
-			log.Printf("starting Worker: %s", err)
-			return err
-		}
-		s.workers[request.Service][request.Key] = worker
+		s.agents[request.Service][request.Key] = agent
 	}
-	return worker.Process(s.conn, request.Record)
+
+	// Fix load on worker if necessary
+	err = agent.EnqueueRequest(s.conn, request)
+	if err == nil {
+		s.pmux.Lock()
+		agent.processing--
+		heap.Fix(s.pool, agent.index)
+		s.pmux.Unlock()
+	}
+	if err != nil {
+		log.Printf("error in RouteRequest: %s", err)
+	}
+	return
 }
 
 // handleEmit deals with clients emits requests

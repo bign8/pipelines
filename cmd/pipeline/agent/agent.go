@@ -1,8 +1,8 @@
 package agent
 
 import (
+	"encoding/base64"
 	"errors"
-	"fmt"
 	"log"
 	"os/exec"
 	"time"
@@ -18,14 +18,19 @@ type Agent struct {
 	Done         chan struct{}
 	conn         *nats.Conn
 	prefixedSubs []*nats.Subscription
-	// workers      map[string]
+	inbox        chan *pipelines.Work
+	starting     chan *pipelines.Work
+	started      chan string
 }
 
 // NewAgent constructs a new agent... duh!!!
 func NewAgent(nc *nats.Conn) *Agent {
 	agent := &Agent{
-		Done: make(chan struct{}),
-		conn: nc,
+		Done:     make(chan struct{}),
+		conn:     nc,
+		inbox:    make(chan *pipelines.Work),
+		starting: make(chan *pipelines.Work),
+		started:  make(chan string),
 	}
 
 	// Find diling address for agent to listen to; TODO: make this suck less
@@ -45,12 +50,40 @@ func NewAgent(nc *nats.Conn) *Agent {
 
 	// Subscribe to agent items
 	prefix := "pipeliens.agent." + agent.ID + "."
-	sub, _ := nc.Subscribe(prefix+"start", agent.handleStart)
+	sub, _ := nc.Subscribe(prefix+"enqueue", agent.handleEnqueue)
 	agent.prefixedSubs = append(agent.prefixedSubs, sub)
 	sub, _ = nc.Subscribe(prefix+"ping", agent.handlePing)
 	agent.prefixedSubs = append(agent.prefixedSubs, sub)
 
 	nc.Subscribe("pipelines.agent.search", agent.handleSearch)
+
+	// Redis queue monitor
+	go func() {
+		var pending []*pipelines.Work
+		for {
+			var first *pipelines.Work
+			var starting chan *pipelines.Work
+			if len(pending) > 0 {
+				first = pending[0]
+				starting = agent.starting
+			}
+
+			select {
+			case work := <-agent.inbox:
+				log.Printf("Getting work: %s", work)
+				pending = append(pending, work)
+			case starting <- first:
+				log.Printf("Sent work: %s", first)
+				pending = pending[1:]
+			}
+		}
+	}()
+
+	go func() {
+		for work := range agent.starting {
+			go agent.runWorker(work)
+		}
+	}()
 
 	return agent
 }
@@ -68,34 +101,39 @@ func (a *Agent) handleSearch(m *nats.Msg) {
 	}
 }
 
-func (a *Agent) handleStart(m *nats.Msg) {
-	var startWorker pipelines.StartWorker
-	if err := proto.Unmarshal(m.Data, &startWorker); err != nil {
-		log.Printf("unmarshal error: %s", err)
-		a.conn.Publish(m.Reply, []byte(fmt.Sprintf("-unmarshal error: %s", err)))
+func (a *Agent) handleEnqueue(m *nats.Msg) {
+	var work pipelines.Work
+	err := proto.Unmarshal(m.Data, &work)
+	if err != nil {
+		log.Printf("error unmarshaling: %s", err)
+		a.conn.Publish(m.Reply, []byte(err.Error()))
+		return
+	}
+	a.inbox <- &work
+	a.conn.Publish(m.Reply, []byte("+"))
+}
+
+func (a *Agent) runWorker(work *pipelines.Work) {
+	bits, err := proto.Marshal(work)
+	if err != nil {
+		log.Printf("proto marshal error: %s", err)
 		return
 	}
 
-	log.Printf("worker request: %+v", startWorker)
-	go a.startWorker(startWorker)
-	a.conn.Publish(m.Reply, []byte("+")) // All good in the hood
-}
-
-func (a *Agent) startWorker(startWorker pipelines.StartWorker) {
 	// TODO: use GOB do detect argument lists
 	cmd := exec.Command("go", "run", "sample/web/main.go", "sample/web/crawl.go", "sample/web/index.go", "sample/web/store.go")
 	cmd.Env = []string{
-		"PIPELINE_SERVICE=" + startWorker.Service,
-		"PIPELINE_KEY=" + startWorker.Key,
-		"PIPELINE_GUID=" + startWorker.Guid,
+		"PIPELINE_SERVICE=" + work.Service,
+		"PIPELINE_KEY=" + work.Key,
+		"PIPELINE_START_WORK=" + base64.StdEncoding.EncodeToString(bits),
 		"GOPATH=" + "/Users/nathanwoods/workspaces/go", // TODO: read this from environment
 	}
-	bits, err := cmd.CombinedOutput()
+	bits, err = cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("%s Error: %s\n%s", startWorker.Service, err, bits)
+		log.Printf("%s Error: %s\n%s", work.Service, err, bits)
 		return
 	}
-	log.Printf("%s Output:\n%s", startWorker.Service, bits)
+	log.Printf("%s Output:\n%s", work.Service, bits)
 }
 
 func (a *Agent) handlePing(m *nats.Msg) {

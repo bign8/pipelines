@@ -1,6 +1,7 @@
 package pipelines
 
 import (
+	"encoding/base64"
 	"errors"
 	"log"
 	"net/http"
@@ -33,7 +34,7 @@ func (a api) handleWork(m *nats.Msg) {
 
 	// Unmarshal message
 	if err := proto.Unmarshal(m.Data, &work); err != nil {
-		log.Printf("unmarshaling error: %v", err)
+		log.Fatalf("unmarshaling error: %v", err)
 		return
 	}
 
@@ -79,7 +80,7 @@ func EmitRecord(stream string, record *Record) error {
 
 // Run is the primary sleep for the operating loop
 func Run() {
-	var service, key, guid string
+	var service, key, startWork string
 	envs := os.Environ()
 	for _, env := range envs {
 		idx := strings.Index(env, "=")
@@ -88,14 +89,14 @@ func Run() {
 			service = env[idx+1:]
 		case strings.HasPrefix(env, "PIPELINE_KEY="):
 			key = env[idx+1:]
-		case strings.HasPrefix(env, "PIPELINE_GUID="):
-			guid = env[idx+1:]
+		case strings.HasPrefix(env, "PIPELINE_START_WORK="):
+			startWork = env[idx+1:]
 		default:
 		}
 	}
 
 	// Manual started comand configuration
-	if guid == "" && service == "" && key == "" {
+	if startWork == "" && service == "" && key == "" {
 		log.Println("No GUID/Service/Key provided; Firing starts + leaving")
 		var wg sync.WaitGroup
 		wg.Add(len(instances))
@@ -121,14 +122,11 @@ func Run() {
 		log.Fatalf("Service could not start: %s : %s", service, err)
 	}
 	conn.Subscribe("pipelines.node."+service+"."+key, instances.handleWork)
-	conn.Subscribe("pipelines.node."+guid+".ping", func(m *nats.Msg) {
-		conn.Publish(m.Reply, []byte("PONG"))
-	})
 	conn.Subscribe("pipelines.node.search", func(m *nats.Msg) {
 		data := StartWorker{
 			Service: service,
 			Key:     key,
-			Guid:    guid,
+			Guid:    service + "." + key,
 		}
 		bits, err := proto.Marshal(&data)
 		if err != nil {
@@ -136,6 +134,17 @@ func Run() {
 		}
 		conn.Publish(m.Reply, bits)
 	})
+
+	// Process the starting piece of work
+	decoded, err := base64.StdEncoding.DecodeString(startWork)
+	if err == nil {
+		msg := nats.Msg{Data: decoded}
+		instances.handleWork(&msg)
+	} else {
+		log.Fatalf("String Decode error: %s", err)
+	}
+
+	// Wait for compeltion
 	<-ctx.Done()
 	time.Sleep(10)
 	conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
