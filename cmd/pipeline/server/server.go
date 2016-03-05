@@ -5,6 +5,7 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v2"
 
@@ -21,6 +22,7 @@ type server struct {
 	conn     *nats.Conn
 	requestQ chan<- pipelines.Work
 	pool     *Pool
+	pmux     sync.RWMutex
 	IDs      map[string]bool
 	workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
 }
@@ -47,6 +49,7 @@ func Run(url string) {
 	q := make(chan pipelines.Work)
 	go func() {
 		for request := range q {
+			// go s.routeRequest(request)
 			s.routeRequest(request)
 		}
 	}()
@@ -60,6 +63,8 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.kill", func(m *nats.Msg) { s.Shutdown() })
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
+	s.conn.Subscribe("pipelines.server.agent.stop", s.handleAgentStop)
+	s.conn.Subscribe("pipelines.server.worker.stop", s.handleWorkerStop)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
 	s.conn.Subscribe("pipelines.server.node.find", s.handleNodeFind)
 
@@ -86,6 +91,41 @@ func (s *server) handleAgentStart(msg *nats.Msg) {
 	agent := Agent{ID: guid}
 	heap.Push(s.pool, &agent)
 	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+// handleAgentStop deals with when an agent finishes running a worker
+func (s *server) handleAgentStop(msg *nats.Msg) {
+	agentID := string(msg.Data)
+	log.Printf("Agent Stop: %s", agentID)
+
+	// Find the worker in the agent pool
+	var found *Agent
+	s.pmux.RLock()
+	for _, a := range *s.pool {
+		if a.ID == agentID {
+			found = a
+		}
+	}
+	s.pmux.RUnlock()
+
+	// Update processing count for worker
+	if found != nil {
+		s.pmux.Lock()
+		found.processing--
+		heap.Fix(s.pool, found.index)
+		s.pmux.Unlock()
+	}
+}
+
+// handleWorkerStop deals with when an agent finishes running a worker
+func (s *server) handleWorkerStop(msg *nats.Msg) {
+	log.Printf("Worker Stop: %s", msg.Data)
+	data := strings.Split(string(msg.Data), ".")
+	keyLookup, ok := s.workers[data[0]]
+	if !ok {
+		return
+	}
+	delete(keyLookup, data[1])
 }
 
 // handleAgentFind adds an existing agent to a pool configuration
@@ -145,14 +185,22 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 	if !ok {
 		guid := s.genGUID()
 
-		// TODO: start locking call on pool
+		// TODO: use Peak and Fix here
+		s.pmux.Lock()
 		agent := heap.Pop(s.pool).(*Agent)
-		worker, err = agent.StartWorker(s.conn, request, guid)
-		if err == nil {
-			agent.processing++
-		}
+		agent.processing++
 		heap.Push(s.pool, agent)
-		// TODO: end locking call on pool
+		s.pmux.Unlock()
+
+		worker, err = agent.StartWorker(s.conn, request, guid)
+
+		// Fix load on worker if necessary
+		if err == nil {
+			s.pmux.Lock()
+			agent.processing--
+			heap.Fix(s.pool, agent.index)
+			s.pmux.Unlock()
+		}
 
 		if err != nil {
 			log.Printf("starting Worker: %s", err)

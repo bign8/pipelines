@@ -3,15 +3,16 @@ package pipelines
 import (
 	"errors"
 	"log"
+	"net/http"
+	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
+	"golang.org/x/net/context"
 )
 
 //go:generate protoc --go_out=. pipelines.proto
@@ -137,6 +138,7 @@ func Run() {
 	})
 	<-ctx.Done()
 	time.Sleep(10)
+	conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
 	return
 }
 
@@ -172,4 +174,8 @@ func initConn() {
 // Initialize internal memory model
 func init() {
 	instances = make(api)
+	go func() {
+		log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 }
