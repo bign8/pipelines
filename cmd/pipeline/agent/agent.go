@@ -59,6 +59,7 @@ func NewAgent(nc *nats.Conn) *Agent {
 	go func() {
 		const maxRunning = 10
 		var active = 0
+		var lastLength = -1
 		var pending []*pipelines.Work
 		ticker := time.Tick(5 * time.Second)
 		for {
@@ -79,7 +80,11 @@ func NewAgent(nc *nats.Conn) *Agent {
 				active--
 				agent.conn.Publish("pipelines.server.agent.stop", []byte(agent.ID))
 			case <-ticker:
-				log.Printf("Queue Depth: %d", len(pending))
+				length := len(pending)
+				if length != lastLength {
+					log.Printf("Queue Depth: %d", len(pending))
+					lastLength = length
+				}
 			}
 		}
 	}()

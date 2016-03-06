@@ -52,7 +52,7 @@ func Run(url string) {
 			case request := <-q:
 				go s.routeRequest(request)
 			case <-ticker:
-				log.Printf("Pool: %s", *s.pool)
+				log.Printf("Pool: %v", *s.pool)
 			}
 		}
 	}()
