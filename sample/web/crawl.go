@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/bign8/pipelines"
 	"github.com/jackdanger/collectlinks"
@@ -23,7 +22,7 @@ type Crawler struct {
 // Start does nothing
 func (c *Crawler) Start(ctx context.Context) (context.Context, error) {
 	ctx, c.done = context.WithCancel(ctx)
-	return ctx, pipelines.ErrNoStartNeeded
+	return ctx, nil
 }
 
 // ProcessTimer does some work
@@ -35,7 +34,6 @@ func (c *Crawler) ProcessTimer(timer *pipelines.Timer) error {
 // ProcessRecord processes a crawl request
 func (c *Crawler) ProcessRecord(record *pipelines.Record) error {
 	err := c.crawl(record, record.Data) // TODO: use protobuf for other vars if necessary
-	time.Sleep(2 * time.Second)
 	c.done()
 	return err
 }
