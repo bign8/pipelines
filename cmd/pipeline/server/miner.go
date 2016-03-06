@@ -1,6 +1,10 @@
 package server
 
-import "github.com/bign8/pipelines/utils"
+import (
+	"log"
+
+	"github.com/bign8/pipelines/utils"
+)
 
 // Miner is a message miner
 type Miner func(string) string
@@ -29,5 +33,6 @@ func randMiner(_ string) string {
 
 func makeMiner(config string) Miner {
 	// TODO: implement this for generic structure parsing (see reflect package)
+	log.Printf("TODO: Need to implement real Miner: %s", config)
 	return randMiner
 }

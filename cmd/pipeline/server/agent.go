@@ -1,8 +1,8 @@
 package server
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/bign8/pipelines"
@@ -17,41 +17,25 @@ type Agent struct {
 	index      int
 }
 
-// EmitAddr is the physical address to send a message to an Agent
-func (a *Agent) startAddr() string {
-	return "pipeliens.agent." + a.ID + ".start"
+// EnqueueRequest sends shit to the agent to do
+func (a *Agent) EnqueueRequest(conn *nats.Conn, request pipelines.Work) error {
+	data, err := proto.Marshal(&request)
+	if err != nil {
+		return err
+	}
+	msg, err := conn.Request("pipeliens.agent."+a.ID+".enqueue", data, 5*time.Second) // TODO: tighten the constraint here
+	if err != nil {
+		// TODO: handle retry here
+		return err
+	}
+	strData := string(msg.Data)
+	if strData != "+" {
+		return errors.New(strData)
+	}
+	return nil
 }
 
-// StartWorker spins up a new worker on a specific agent
-func (a *Agent) StartWorker(conn *nats.Conn, request pipelines.Work, guid string) (*Worker, error) {
-	work := pipelines.StartWorker{
-		Service: request.Service,
-		Key:     request.Key,
-		Command: "go run sample/web/*.go", // TODO: load this from configuration stuff
-		Guid:    guid,
-	}
-
-	data, err := proto.Marshal(&work)
-	if err != nil {
-		return nil, err
-	}
-
-	msg, err := conn.Request(a.startAddr(), data, 5*time.Second) // TODO: tighten the constraint here
-	if err != nil {
-		return nil, err
-	}
-	if string(msg.Data[0]) != "+" {
-		return nil, fmt.Errorf("agent start: %s", msg.Data[1:])
-	}
-	log.Printf("Agent[%s...]: Starting %+v", a.ID[:10], work)
-
-	worker := Worker{
-		ID:      guid,
-		Service: request.Service,
-		Key:     request.Key,
-	}
-	if err = worker.Ping(conn); err != nil {
-		return nil, err
-	}
-	return &worker, nil
+// String gives a string representation of the pool
+func (a *Agent) String() string {
+	return fmt.Sprintf("%s: %d", a.ID, a.processing)
 }

@@ -22,7 +22,7 @@ Type: Node
 CMD: go run sample/web/*.go
 
 In:
-  store_request: "*"
+  store_request: "@"
 ---
 Name: crawl
 Type: Node

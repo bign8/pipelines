@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"time"
+	"os"
 
 	"github.com/bign8/pipelines"
 	"golang.org/x/net/context"
@@ -10,13 +10,22 @@ import (
 
 // Storer is the storer type
 type Storer struct {
-	done context.CancelFunc
+	f *os.File
 }
 
 // Start starts the necessary persistence for the module
 func (s *Storer) Start(ctx context.Context) (context.Context, error) {
-	ctx, s.done = context.WithCancel(ctx)
-	return ctx, pipelines.ErrNoStartNeeded
+	f, err := os.OpenFile("urls.txt", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+		return nil, err
+	}
+	s.f = f
+
+	go func() {
+		<-ctx.Done()
+		f.Close()
+	}()
+	return ctx, nil
 }
 
 // ProcessTimer does some Work
@@ -28,8 +37,12 @@ func (s *Storer) ProcessTimer(timer *pipelines.Timer) error {
 // ProcessRecord checks if a value is already indexed, if not, emitted as crawl_request
 func (s *Storer) ProcessRecord(record *pipelines.Record) error {
 	log.Printf("Stiring Data: %v", record.Data)
-	time.Sleep(2 * time.Second)
-	s.done()
+	_, err := s.f.WriteString(record.Data + "\n")
+	if err != nil {
+		log.Fatalf("err: %s", err)
+	}
+	// time.Sleep(2 * time.Second)
+	// s.done()
 	return nil
 }
 
