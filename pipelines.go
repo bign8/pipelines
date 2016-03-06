@@ -1,14 +1,10 @@
 package pipelines
 
 import (
-	"encoding/base64"
 	"errors"
 	"log"
 	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
-	"os"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
@@ -23,39 +19,23 @@ var ErrNoStartNeeded = errors.New("No Start Necessary...")
 // Local scoped NATS connection instance
 var conn *nats.Conn
 
-// Local instances of computations to be ran
-var instances api
-
-type api map[string]Computation
-
-func (a api) handleWork(m *nats.Msg) {
-	if m.Reply != "" {
-		conn.Publish(m.Reply, []byte("ACK"))
-	}
-
-	// Unmarshal message
-	var work Work
-	if err := proto.Unmarshal(m.Data, &work); err != nil {
-		log.Fatalf("unmarshaling error: %v", err)
-		return
-	}
-
-	// Find worker
-	c, ok := a[work.Service]
-	if !ok {
-		log.Printf("service not found: %v", work.Service)
-		return
-	}
-	c.ProcessRecord(work.GetRecord())
-}
+// Registration dictionary for Services (borrowed from GOB: https://golang.org/src/encoding/gob/type.go?s=24183:24232#L808)
+var (
+	registerLock       sync.RWMutex
+	registeredServices = make(map[string]Computation)
+)
 
 // Register registers a parent instance of a computaton as a potential worker
 func Register(name string, comp Computation) {
-	if _, ok := instances[name]; ok {
-		panic(errors.New("Already assigned computation"))
+	if name == "" {
+		panic("attempt to register empty name")
 	}
-	instances[name] = comp
-	initConn()
+	registerLock.Lock()
+	defer registerLock.Unlock()
+	if _, ok := registeredServices[name]; ok {
+		panic("already assigned computation")
+	}
+	registeredServices[name] = comp
 }
 
 // Computation is the base interface for all working operations
@@ -80,7 +60,30 @@ func EmitRecord(stream string, record *Record) error {
 	return conn.Publish("pipelines.server.emit", data)
 }
 
-// Run is the primary sleep for the operating loop
+func handleWork(m *nats.Msg) {
+	if m.Reply != "" {
+		conn.Publish(m.Reply, []byte("ACK"))
+	}
+
+	// Unmarshal message
+	var work Work
+	if err := proto.Unmarshal(m.Data, &work); err != nil {
+		log.Fatalf("unmarshaling error: %v", err)
+		return
+	}
+
+	// Find worker
+	registerLock.RLock()
+	c, ok := registeredServices[work.Service]
+	registerLock.RUnlock()
+	if !ok {
+		log.Printf("service not found: %v", work.Service)
+		return
+	}
+	c.ProcessRecord(work.GetRecord())
+}
+
+/*/ Run is the primary sleep for the operating loop
 func Run() {
 	var service, key, startWork string
 	envs := os.Environ()
@@ -123,41 +126,24 @@ func Run() {
 	if err != nil && err != ErrNoStartNeeded {
 		log.Fatalf("Service could not start: %s : %s", service, err)
 	}
-	conn.Subscribe("pipelines.node."+service+"."+key, instances.handleWork)
+	conn.Subscribe("pipelines.node."+service+"."+key, handleWork)
 
 	// Process the starting piece of work
 	decoded, err := base64.StdEncoding.DecodeString(startWork)
 	if err == nil {
 		msg := nats.Msg{Data: decoded}
-		instances.handleWork(&msg)
+		handleWork(&msg)
 	} else {
 		log.Fatalf("String Decode error: %s", err)
 	}
 
 	// Wait for compeltion
 	<-ctx.Done()
-	time.Sleep(10)
-	conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
+	// time.Sleep(10)
+	// conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
 	return
 }
-
-// New constructs new record based on a source record
-func (r *Record) New(data string) *Record {
-	return &Record{
-		CorrelationID: r.CorrelationID,
-		Guid:          0, // TODO: generate at random
-		Data:          data,
-	}
-}
-
-// NewRecord constructs a completely new record
-func NewRecord(data string) *Record {
-	return &Record{
-		CorrelationID: 0, // TODO
-		Guid:          0, // TODO
-		Data:          data,
-	}
-}
+// */
 
 // Startup nats connection
 func initConn() {
@@ -172,7 +158,6 @@ func initConn() {
 
 // Initialize internal memory model
 func init() {
-	instances = make(api)
 	// go func() {
 	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
 	// 	log.Println(http.ListenAndServe("localhost:6060", nil))

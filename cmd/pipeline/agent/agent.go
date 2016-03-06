@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bign8/pipelines"
+	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
@@ -38,7 +39,7 @@ func NewAgent(nc *nats.Conn) *Agent {
 	// Find diling address for agent to listen to; TODO: make this suck less
 	var msg *nats.Msg
 	err := errors.New("starting")
-	details := []byte(getIPAddrDebugString())
+	details := []byte(utils.GetIPAddrDebugString())
 	ctr := 1
 	for err != nil {
 		log.Printf("Requesting UUID: Timeout %ds", ctr)
@@ -76,6 +77,7 @@ func NewAgent(nc *nats.Conn) *Agent {
 				active++
 			case <-agent.completing:
 				active--
+				agent.conn.Publish("pipelines.server.agent.stop", []byte(agent.ID))
 			case <-ticker:
 				log.Printf("Queue Depth: %d", len(pending))
 			}

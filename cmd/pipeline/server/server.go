@@ -52,7 +52,7 @@ func Run(url string) {
 			case request := <-q:
 				go s.routeRequest(request)
 			case <-ticker:
-				log.Printf("Pool: %s", s.pool)
+				log.Printf("Pool: %s", *s.pool)
 			}
 		}
 	}()
@@ -60,7 +60,6 @@ func Run(url string) {
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
-	s.conn.Subscribe("pipelines.server.kill", func(m *nats.Msg) { s.Shutdown() })
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
 	s.conn.Subscribe("pipelines.server.agent.stop", s.handleAgentStop)
@@ -93,7 +92,7 @@ func (s *server) handleAgentStart(msg *nats.Msg) {
 // handleAgentStop deals with when an agent finishes running a worker
 func (s *server) handleAgentStop(msg *nats.Msg) {
 	agentID := string(msg.Data)
-	log.Printf("Agent Stop: %s", agentID)
+	// log.Printf("Agent Stop: %s", agentID)
 
 	// Find the worker in the agent pool
 	var found *Agent

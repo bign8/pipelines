@@ -34,3 +34,13 @@ func RandString(n int) string {
 
 	return string(b)
 }
+
+// RandUint64 returns a random Uint64
+func RandUint64() uint64 {
+	// TODO: make this use more of the uint64 spectrum
+	return uint64(rand.Int63())
+}
+
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
