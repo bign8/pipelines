@@ -6,13 +6,13 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-
-	"gopkg.in/yaml.v2"
+	"time"
 
 	"github.com/bign8/pipelines"
 	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
+	"gopkg.in/yaml.v2"
 )
 
 // Server ...
@@ -24,8 +24,6 @@ type server struct {
 	pool     *Pool
 	pmux     sync.RWMutex
 	IDs      map[string]bool
-	// workers  map[string]map[string]*Worker // Service Name -> Mined Key -> worker
-	agents map[string]map[string]*Agent
 }
 
 // Run starts the Pipeline Server
@@ -36,8 +34,6 @@ func Run(url string) {
 		Streams: make(map[string][]*Node),
 		pool:    &pool,
 		IDs:     make(map[string]bool),
-		// workers: make(map[string]map[string]*Worker),
-		agents: make(map[string]map[string]*Agent),
 	}
 
 	// startup connection and various server helpers
@@ -50,15 +46,17 @@ func Run(url string) {
 	// Start Request manager queue
 	q := make(chan pipelines.Work)
 	go func() {
-		for request := range q {
-			go s.routeRequest(request)
-			// s.routeRequest(request)
+		for {
+			ticker := time.Tick(5 * time.Second)
+			select {
+			case request := <-q:
+				go s.routeRequest(request)
+			case <-ticker:
+				log.Printf("Pool: %s", s.pool)
+			}
 		}
 	}()
 	s.requestQ = q
-
-	// Set error handlers
-	s.conn.SetReconnectHandler(s.natsReconnect)
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
@@ -66,13 +64,10 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
 	s.conn.Subscribe("pipelines.server.agent.stop", s.handleAgentStop)
-	s.conn.Subscribe("pipelines.server.worker.stop", s.handleWorkerStop)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
-	s.conn.Subscribe("pipelines.server.node.find", s.handleNodeFind)
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
-	s.conn.PublishRequest("pipelines.node.search", "pipelines.server.node.find", []byte(""))
 	<-s.Running
 }
 
@@ -119,17 +114,6 @@ func (s *server) handleAgentStop(msg *nats.Msg) {
 	}
 }
 
-// handleWorkerStop deals with when an agent finishes running a worker
-func (s *server) handleWorkerStop(msg *nats.Msg) {
-	log.Printf("Worker Stop: %s", msg.Data)
-	// data := strings.Split(string(msg.Data), ".")
-	// // keyLookup, ok := s.workers[data[0]]
-	// if !ok {
-	// 	return
-	// }
-	// delete(keyLookup, data[1])
-}
-
 // handleAgentFind adds an existing agent to a pool configuration
 func (s *server) handleAgentFind(msg *nats.Msg) {
 	log.Printf("Agent Found: %s", msg.Data)
@@ -143,71 +127,21 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 	s.conn.Publish(msg.Reply, []byte(guid))
 }
 
-// handleNodeFind adds an existing agent to the server's knowledge
-func (s *server) handleNodeFind(msg *nats.Msg) {
-	var info pipelines.StartWorker
-	if err := proto.Unmarshal(msg.Data, &info); err != nil {
-		// TODO: handle the error
-		return
-	}
-	log.Printf("Worker Found: %s %s %s", info.Service, info.Key, info.Guid)
-	// keyMAP, ok := s.workers[info.Service]
-	// if !ok {
-	// 	keyMAP = make(map[string]*Worker)
-	// 	s.workers[info.Service] = keyMAP
-	// }
-	// keyMAP[info.Key] = &Worker{
-	// 	ID:      info.Guid,
-	// 	Service: info.Service,
-	// 	Key:     info.Key,
-	// }
-}
-
-func (s *server) natsReconnect(nc *nats.Conn) {
-	// Request for agents to reconnect
-	// for agentID := range s.agentIDs {
-	// 	msg, err := s.conn.Request("pipelines.agent."+agentID+".ping", []byte("PING"), time.Second)
-	// 	if err != nil || string(msg.Data) != "PONG" {
-	// 		log.Printf("Agent Deleted: %s", agentID)
-	// 		delete(s.agentIDs, agentID)
-	// 	} else {
-	// 		log.Printf("Agent Found: %s", agentID)
-	// 	}
-	// }
-	log.Printf("Handling NATS Reconnect")
-}
-
 func (s *server) routeRequest(request pipelines.Work) (err error) {
-	// keyMAP, ok := s.agents[request.Service]
-	// if !ok {
-	// 	keyMAP = make(map[string]*Agent)
-	// 	s.agents[request.Service] = keyMAP
-	// }
-	// agent, ok := keyMAP[request.Key]
-	var agent *Agent
-	ok := false
-
 	// Worker is not active, need to pass to least loaded agent
-	if !ok {
-		// TODO: use Peak and Fix here
-		s.pmux.Lock()
-		agent = heap.Pop(s.pool).(*Agent)
-		agent.processing++
-		heap.Push(s.pool, agent)
-		s.pmux.Unlock()
-
-		// s.agents[request.Service][request.Key] = agent
-	}
+	s.pmux.Lock()
+	agent := s.pool.Peek().(*Agent)
+	agent.processing++
+	heap.Fix(s.pool, agent.index)
+	s.pmux.Unlock()
 
 	// Fix load on worker if necessary
 	err = agent.EnqueueRequest(s.conn, request)
-	if err == nil {
+	if err != nil {
 		s.pmux.Lock()
 		agent.processing--
 		heap.Fix(s.pool, agent.index)
 		s.pmux.Unlock()
-	}
-	if err != nil {
 		log.Printf("error in RouteRequest: %s", err)
 	}
 	return
@@ -222,7 +156,7 @@ func (s *server) handleEmit(m *nats.Msg) {
 		log.Printf("unmarshaling error: %v", err)
 		return
 	}
-	log.Printf("Emit [%s]: %s", emit.Stream, emit.Record.Data)
+	// log.Printf("Emit [%s]: %s", emit.Stream, emit.Record.Data)
 
 	// Find Clients
 	nodes, ok := s.Streams[emit.Stream]

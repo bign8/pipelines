@@ -124,18 +124,6 @@ func Run() {
 		log.Fatalf("Service could not start: %s : %s", service, err)
 	}
 	conn.Subscribe("pipelines.node."+service+"."+key, instances.handleWork)
-	conn.Subscribe("pipelines.node.search", func(m *nats.Msg) {
-		data := StartWorker{
-			Service: service,
-			Key:     key,
-			Guid:    service + "." + key,
-		}
-		bits, err := proto.Marshal(&data)
-		if err != nil {
-			// TODO: what to do here
-		}
-		conn.Publish(m.Reply, bits)
-	})
 
 	// Process the starting piece of work
 	decoded, err := base64.StdEncoding.DecodeString(startWork)

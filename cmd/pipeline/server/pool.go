@@ -38,3 +38,11 @@ func (p Pool) Swap(i, j int) {
 	p[i].index = i
 	p[j].index = j
 }
+
+// Peek gives the top element without affecting the heap
+func (p Pool) Peek() interface{} {
+	if len(p) > 0 {
+		return p[0]
+	}
+	return nil
+}

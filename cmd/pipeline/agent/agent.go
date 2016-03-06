@@ -51,12 +51,7 @@ func NewAgent(nc *nats.Conn) *Agent {
 	agent.ID = string(msg.Data)
 
 	// Subscribe to agent items
-	prefix := "pipeliens.agent." + agent.ID + "."
-	sub, _ := nc.Subscribe(prefix+"enqueue", agent.handleEnqueue)
-	agent.prefixedSubs = append(agent.prefixedSubs, sub)
-	sub, _ = nc.Subscribe(prefix+"ping", agent.handlePing)
-	agent.prefixedSubs = append(agent.prefixedSubs, sub)
-
+	nc.Subscribe("pipeliens.agent."+agent.ID+".enqueue", agent.handleEnqueue)
 	nc.Subscribe("pipelines.agent.search", agent.handleSearch)
 
 	// Redis queue monitor
@@ -87,6 +82,7 @@ func NewAgent(nc *nats.Conn) *Agent {
 		}
 	}()
 
+	// Actual Runner
 	go func() {
 		for work := range agent.starting {
 			go agent.runWorker(work)
@@ -107,6 +103,7 @@ func (a *Agent) handleSearch(m *nats.Msg) {
 	} else {
 		log.Printf("Re-found UUID: %s", a.ID)
 	}
+	a.ID = newGUID
 }
 
 func (a *Agent) handleEnqueue(m *nats.Msg) {
@@ -149,9 +146,4 @@ func (a *Agent) runWorker(work *pipelines.Work) {
 	}
 	log.Printf("%s Output:\n%s", work.Service, bits)
 	a.completing <- true
-}
-
-func (a *Agent) handlePing(m *nats.Msg) {
-	log.Printf("Ping Request: %s", m.Data)
-	a.conn.Publish(m.Reply, []byte("PONG"))
 }

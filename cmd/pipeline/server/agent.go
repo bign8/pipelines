@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/bign8/pipelines"
@@ -24,6 +25,7 @@ func (a *Agent) EnqueueRequest(conn *nats.Conn, request pipelines.Work) error {
 	}
 	msg, err := conn.Request("pipeliens.agent."+a.ID+".enqueue", data, 5*time.Second) // TODO: tighten the constraint here
 	if err != nil {
+		// TODO: handle retry here
 		return err
 	}
 	strData := string(msg.Data)
@@ -31,4 +33,9 @@ func (a *Agent) EnqueueRequest(conn *nats.Conn, request pipelines.Work) error {
 		return errors.New(strData)
 	}
 	return nil
+}
+
+// String gives a string representation of the pool
+func (a *Agent) String() string {
+	return fmt.Sprintf("%s: %d", a.ID, a.processing)
 }
