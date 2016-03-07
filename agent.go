@@ -54,10 +54,10 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 	completed := make(chan bool)
 
 	go func() {
-		const maxRunning = 100
+		const maxRunning = 10
 
 		var pending []*Work
-		var active, lastLength = 0, -1
+		var active, lastLength, lastActive = 0, -1, -1
 		ticker := time.Tick(5 * time.Second)
 
 		for {
@@ -79,9 +79,9 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 				a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 			case <-ticker:
 				length := len(pending)
-				if length != lastLength {
-					log.Printf("Queue Depth: %d", len(pending))
-					lastLength = length
+				if length != lastLength || active != lastActive {
+					log.Printf("Queue Depth: %d; Active: %d", len(pending), active)
+					lastLength, lastActive = length, active
 				}
 			}
 		}

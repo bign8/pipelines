@@ -43,6 +43,9 @@ func Run(url string) {
 		panic(err)
 	}
 
+	static := make(chan pipelines.Work)
+	toRequest := make(chan pipelines.Work)
+
 	// Start Request manager queue
 	q := make(chan pipelines.Work)
 	go func() {
@@ -50,13 +53,35 @@ func Run(url string) {
 			ticker := time.Tick(5 * time.Second)
 			select {
 			case request := <-q:
-				go s.routeRequest(request)
+				if request.Key == MineConstant {
+					static <- request
+				} else {
+					toRequest <- request
+				}
 			case <-ticker:
 				log.Printf("Pool: %v", *s.pool)
 			}
 		}
 	}()
 	s.requestQ = q
+
+	// fixed size pool of routers
+	for i := 0; i < 10; i++ {
+		go func() {
+			for request := range toRequest {
+				s.routeRequest(request)
+			}
+		}()
+	}
+
+	// fixed size pool of forwarders
+	for i := 0; i < 10; i++ {
+		go func() {
+			for request := range static {
+				s.forwardRequest(request, toRequest)
+			}
+		}()
+	}
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
@@ -73,7 +98,7 @@ func Run(url string) {
 func (s *server) genGUID() (guid string) {
 	ok := true
 	for ok {
-		guid = utils.RandString(40)
+		guid = utils.RandString(10)
 		_, ok = s.IDs[guid]
 	}
 	s.IDs[guid] = true
@@ -118,7 +143,7 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 	log.Printf("Agent Found: %s", msg.Data)
 	guid := string(msg.Data)
 	if _, ok := s.IDs[guid]; ok {
-		guid = utils.RandString(40)
+		guid = s.genGUID()
 	}
 	s.IDs[guid] = true
 	agent := Agent{ID: guid}
@@ -144,6 +169,19 @@ func (s *server) routeRequest(request pipelines.Work) (err error) {
 		log.Printf("error in RouteRequest: %s", err)
 	}
 	return
+}
+
+func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.Work) {
+	bits, err := proto.Marshal(&work)
+	if err != nil {
+		log.Printf("proto marshal error: %s", err)
+		notFound <- work
+		return
+	}
+	msg, err := s.conn.Request("pipelines.node."+work.Service+"."+work.Key, bits, time.Second)
+	if err != nil || string(msg.Data) != "ACK" {
+		notFound <- work
+	}
 }
 
 // handleEmit deals with clients emits requests

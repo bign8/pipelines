@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
+	"runtime"
 	"sync"
 	"time"
 
@@ -53,11 +54,11 @@ func EmitRecord(stream string, record *Record) error {
 		Record: record,
 		Stream: stream,
 	}
-	data, err := proto.Marshal(emit)
+	bits, err := proto.Marshal(emit)
 	if err != nil {
 		return err
 	}
-	return conn.Publish("pipelines.server.emit", data)
+	return conn.Publish("pipelines.server.emit", bits)
 }
 
 // Run starts the entire node
@@ -95,18 +96,7 @@ func Run() {
 }
 
 func doComputation(work *Work, completed chan<- bool) {
-	// see if existing lister exists!
-	// TODO: move this logic to the server!
-	bits, err := proto.Marshal(work)
-	if err != nil {
-		log.Printf("proto marshal error: %s", err)
-		return
-	}
-	msg, err := conn.Request("pipelines.node."+work.Service+"."+work.Key, bits, time.Second)
-	if err == nil && string(msg.Data) == "ACK" {
-		completed <- true
-		return
-	}
+	start := time.Now()
 
 	// Grab the registered worker from my list of services
 	registerLock.RLock()
@@ -119,7 +109,7 @@ func doComputation(work *Work, completed chan<- bool) {
 
 	// Start the given service
 	ctx := context.WithValue(context.TODO(), "key", work.Key)
-	ctx, err = c.Start(ctx)
+	ctx, err := c.Start(ctx)
 	if err != nil {
 		log.Printf("Service could not start: %s : %s", work.Service, err)
 	}
@@ -138,40 +128,9 @@ func doComputation(work *Work, completed chan<- bool) {
 	c.ProcessRecord(work.GetRecord())
 	<-ctx.Done()
 	sub.Unsubscribe()
+	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, time.Since(start))
 	completed <- true
 }
-
-/*/ Run is the primary sleep for the operating loop
-func Run() {
-	// Automated start ... start conn the correct way an things...
-	ctx := context.WithValue(context.TODO(), "key", key)
-	initConn()
-	comp, ok := instances[service]
-	if !ok {
-		log.Fatalf("Service not found in cmd: %s", service)
-	}
-	ctx, err := comp.Start(ctx)
-	if err != nil && err != ErrNoStartNeeded {
-		log.Fatalf("Service could not start: %s : %s", service, err)
-	}
-	conn.Subscribe("pipelines.node."+service+"."+key, handleWork)
-
-	// Process the starting piece of work
-	decoded, err := base64.StdEncoding.DecodeString(startWork)
-	if err == nil {
-		msg := nats.Msg{Data: decoded}
-		handleWork(&msg)
-	} else {
-		log.Fatalf("String Decode error: %s", err)
-	}
-
-	// Wait for compeltion
-	<-ctx.Done()
-	// time.Sleep(10)
-	// conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
-	return
-}
-// */
 
 // Initialize internal memory model
 func init() {
@@ -179,5 +138,5 @@ func init() {
 	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
 	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
 	// }()
-	// runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
 }
