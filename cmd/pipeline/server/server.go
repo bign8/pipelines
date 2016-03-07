@@ -33,7 +33,7 @@ func Run(url string) {
 		Running: make(chan struct{}),
 		Streams: make(map[string][]*Node),
 		pool:    &pool,
-		IDs:     make(map[string]bool),
+		IDs:     make(map[string]bool), // TODO: make this a point based Agent lookup map
 	}
 
 	// startup connection and various server helpers
@@ -90,6 +90,7 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
 	s.conn.Subscribe("pipelines.server.agent.stop", s.handleAgentStop)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
+	s.conn.Subscribe("pipelines.server.agent.die", s.handleAgentDie)
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
@@ -150,6 +151,24 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 	agent := Agent{ID: guid}
 	heap.Push(s.pool, &agent)
 	s.conn.Publish(msg.Reply, []byte(guid))
+}
+
+func (s *server) handleAgentDie(msg *nats.Msg) {
+	log.Printf("Dieing: %s", msg.Data)
+	s.pmux.Lock()
+	defer s.pmux.Unlock()
+
+	agentID := string(msg.Data)
+	var found *Agent
+	for _, a := range *s.pool {
+		if a.ID == agentID {
+			found = a
+		}
+	}
+
+	if found != nil {
+		heap.Remove(s.pool, found.index)
+	}
 }
 
 func (s *server) routeRequest(request pipelines.Work) (err error) {

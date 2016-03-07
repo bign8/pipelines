@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log"
 	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
+	"os"
+	"os/signal"
 	"runtime"
 	"sync"
 	"time"
@@ -82,6 +84,19 @@ func Run() {
 	}
 	log.Printf("SET UUID: %s", msg.Data)
 
+	// Listen to terminal signals // TODO: properly shutdown processes + buffers
+	// https://golang.org/pkg/os/signal/#example_Notify
+	dying := make(chan os.Signal, 1)
+	signal.Notify(dying, os.Interrupt)
+	go func() {
+		s := <-dying
+		log.Printf("Got signal: %s", s)
+		conn.Publish("pipelines.server.agent.die", msg.Data)
+		runtime.Gosched()
+		panic("death")
+	}()
+
+	// Actually start agent
 	a := &agent{
 		ID:   string(msg.Data),
 		conn: conn,
