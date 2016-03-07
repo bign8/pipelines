@@ -113,6 +113,13 @@ func doComputation(work *Work, completed chan<- bool) {
 	if err != nil {
 		log.Printf("Service could not start: %s : %s", work.Service, err)
 	}
+
+	// Private inbox for node
+	inbox := make(chan interface{})
+	todo := utils.Buffer(work.Service+"."+work.Key, inbox, ctx.Done())
+	inbox <- work.GetRecord()
+
+	// Start listener subscription for node
 	sub, _ := conn.Subscribe("pipelines.node."+work.Service+"."+work.Key, func(m *nats.Msg) {
 		if m.Reply != "" {
 			conn.Publish(m.Reply, []byte("ACK"))
@@ -122,11 +129,14 @@ func doComputation(work *Work, completed chan<- bool) {
 			log.Printf("Unable to unmarshal work for service %s: %s", work.Service, err)
 			return
 		}
-		c.ProcessRecord(w.GetRecord())
+		inbox <- w.GetRecord()
 	})
 
-	c.ProcessRecord(work.GetRecord())
-	<-ctx.Done()
+	// Blocking call
+	for item := range todo {
+		c.ProcessRecord(item.(*Record))
+	}
+
 	sub.Unsubscribe()
 	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, time.Since(start))
 	completed <- true
