@@ -75,6 +75,7 @@ func Run(url string) {
 	}
 
 	// fixed size pool of forwarders
+	// TODO: make this smart!!! (only emit one start request to an agent + build queue)
 	for i := 0; i < 10; i++ {
 		go func() {
 			for request := range static {

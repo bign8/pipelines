@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 )
@@ -56,31 +57,30 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 	go func() {
 		const maxRunning = 10
 
-		var pending []*Work
-		var active, lastLength, lastActive = 0, -1, -1
+		pending := utils.NewQueue()
 		ticker := time.Tick(5 * time.Second)
+		var active, lastLength, lastActive = 0, -1, -1
 
 		for {
 			var first *Work
 			var starting chan *Work
-			if len(pending) > 0 && active < maxRunning {
-				first = pending[0]
+			if pending.Len() > 0 && active < maxRunning {
+				first = pending.Poll().(*Work)
 				starting = outbox
 			}
 
 			select {
 			case work := <-a.inbox:
-				pending = append(pending, work)
+				pending.Push(work)
 			case starting <- first:
-				pending = pending[1:]
 				active++
 			case <-completed:
 				active--
 				a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 			case <-ticker:
-				length := len(pending)
+				length := pending.Len()
 				if length != lastLength || active != lastActive {
-					log.Printf("Queue Depth: %d; Active: %d", len(pending), active)
+					log.Printf("Queue Depth: %d; Active: %d", length, active)
 					lastLength, lastActive = length, active
 				}
 			}
