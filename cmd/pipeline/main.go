@@ -51,6 +51,7 @@ var commands = []*Command{
 	cmdSend,
 	cmdServer,
 	cmdLoad,
+	cmdStats,
 }
 
 func main() {

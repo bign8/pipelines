@@ -1,6 +1,7 @@
 package pipelines
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -59,7 +60,7 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 
 		pending := utils.NewQueue()
 		ticker := time.Tick(5 * time.Second)
-		var active, lastLength, lastActive = 0, -1, -1
+		var active, lastLength, lastActive, added = 0, -1, -1, 0
 
 		for {
 			var first *Work
@@ -72,6 +73,7 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 			select {
 			case work := <-a.inbox:
 				pending.Push(work)
+				added++
 			case starting <- first:
 				active++
 			case <-completed:
@@ -83,6 +85,11 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 					log.Printf("Queue Depth: %d; Active: %d", length, active)
 					lastLength, lastActive = length, active
 				}
+
+				// REPORT ANALYTICS ALL THE TIME!!!
+				bits := fmt.Sprintf("%s %d %d %d", a.ID, length, active, added)
+				a.conn.Publish("pipelines.stats", []byte(bits))
+				added = 0
 			}
 		}
 	}()

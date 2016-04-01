@@ -87,10 +87,14 @@ func Run(url string) {
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
 	s.conn.Subscribe("pipelines.server.load", s.handleLoad)
-	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart)
+
+	// Most of these payloads are just the agentID
+	s.conn.Subscribe("pipelines.server.agent.start", s.handleAgentStart) // Change notion of these updates
 	s.conn.Subscribe("pipelines.server.agent.stop", s.handleAgentStop)
 	s.conn.Subscribe("pipelines.server.agent.find", s.handleAgentFind)
 	s.conn.Subscribe("pipelines.server.agent.die", s.handleAgentDie)
+
+	// s.conn.Subscribe("pipelines.node.agent.>", ) // handle msg based on payload
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
@@ -155,6 +159,8 @@ func (s *server) handleAgentFind(msg *nats.Msg) {
 
 func (s *server) handleAgentDie(msg *nats.Msg) {
 	log.Printf("Dieing: %s", msg.Data)
+
+	log.Printf("Dieing: %+v", msg)
 	s.pmux.Lock()
 	defer s.pmux.Unlock()
 
