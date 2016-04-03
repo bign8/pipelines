@@ -1,7 +1,6 @@
 package pipelines
 
 import (
-	"fmt"
 	"log"
 	"time"
 
@@ -54,6 +53,7 @@ func (a *agent) enqueue(m *nats.Msg) {
 func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 	outbox := make(chan *Work)
 	completed := make(chan bool)
+	stats := make(map[string]int64)
 
 	go func() {
 		const maxRunning = 10
@@ -87,9 +87,9 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 				}
 
 				// REPORT ANALYTICS ALL THE TIME!!!
-				bits := fmt.Sprintf("%s %d %d %d", a.ID, length, active, added)
-				a.conn.Publish("pipelines.stats", []byte(bits))
-				added = 0
+				// bits := fmt.Sprintf("%s %d %d %d", a.ID, length, active, added)
+				// a.conn.Publish("pipelines.stats", []byte(bits))
+				// added = 0
 			}
 		}
 	}()
