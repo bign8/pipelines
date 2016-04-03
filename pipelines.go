@@ -135,7 +135,7 @@ func doComputation(work *Work, completed chan<- bool) {
 	inbox <- work.GetRecord()
 
 	// Start listener subscription for node
-	sub, _ := conn.Subscribe("pipelines.node."+work.Service+"."+work.Key, func(m *nats.Msg) {
+	sub1, _ := conn.Subscribe("pipelines.node."+work.ServiceKey(), func(m *nats.Msg) {
 		if m.Reply != "" {
 			conn.Publish(m.Reply, []byte("ACK"))
 		}
@@ -146,13 +146,17 @@ func doComputation(work *Work, completed chan<- bool) {
 		}
 		inbox <- w.GetRecord()
 	})
+	sub2, _ := conn.Subscribe("pipelines.node."+work.ServiceKey()+".ping", func(m *nats.Msg) {
+		conn.Publish(m.Reply, []byte("PONG"))
+	})
 
 	// Blocking call
 	for item := range todo {
 		c.ProcessRecord(item.(*Record))
 	}
 
-	sub.Unsubscribe()
+	sub1.Unsubscribe()
+	sub2.Unsubscribe()
 	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, time.Since(start))
 	completed <- true
 }

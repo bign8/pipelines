@@ -2,6 +2,7 @@ package server
 
 import (
 	"container/heap"
+	"fmt"
 	"log"
 	"runtime"
 	"strings"
@@ -24,16 +25,19 @@ type server struct {
 	pool     *Pool
 	pmux     sync.RWMutex
 	IDs      map[string]bool
+	spooling map[string]*utils.Queue
+	smux     sync.Mutex
 }
 
 // Run starts the Pipeline Server
 func Run(url string) {
 	pool := Pool(make([]*Agent, 0))
 	s := &server{
-		Running: make(chan struct{}),
-		Streams: make(map[string][]*Node),
-		pool:    &pool,
-		IDs:     make(map[string]bool), // TODO: make this a point based Agent lookup map
+		Running:  make(chan struct{}),
+		Streams:  make(map[string][]*Node),
+		pool:     &pool,
+		IDs:      make(map[string]bool), // TODO: make this a point based Agent lookup map
+		spooling: make(map[string]*utils.Queue),
 	}
 
 	// startup connection and various server helpers
@@ -49,6 +53,7 @@ func Run(url string) {
 	// Start Request manager queue
 	q := make(chan pipelines.Work)
 	go func() {
+		old, new := "", ""
 		for {
 			ticker := time.Tick(5 * time.Second)
 			select {
@@ -59,7 +64,11 @@ func Run(url string) {
 					toRequest <- request
 				}
 			case <-ticker:
-				log.Printf("Pool: %v", *s.pool)
+				new = fmt.Sprintf("Pool: %v", *s.pool)
+				if new != old {
+					log.Print(new)
+					old = new
+				}
 			}
 		}
 	}()
@@ -204,10 +213,54 @@ func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.W
 		notFound <- work
 		return
 	}
-	msg, err := s.conn.Request("pipelines.node."+work.Service+"."+work.Key, bits, time.Second)
+	key := work.ServiceKey()
+	msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
 	if err != nil || string(msg.Data) != "ACK" {
-		notFound <- work
+		s.smux.Lock()
+		defer s.smux.Unlock()
+		if q, ok := s.spooling[key]; ok {
+			q.Push(bits)
+		} else {
+			notFound <- work
+			q = utils.NewQueue()
+			s.spooling[key] = q
+			go s.checkSpool(key)
+		}
 	}
+}
+
+// checkSpool runs a routine every second to see if a service is alive
+// if so it dumps the queue into the individual (runs as go-routine)
+func (s *server) checkSpool(key string) {
+
+	// Sit and spin until target is active
+	// TODO: allow for timeout here (lost opening request?)
+	for {
+		time.Sleep(time.Second)
+		msg, err := s.conn.Request("pipelines.node."+key+".ping", []byte("ping"), time.Second)
+		if err != nil || string(msg.Data) != "PONG" {
+			log.Printf("Service [%s]: not found yet... trying again in 1s", key)
+		} else {
+			break
+		}
+	}
+
+	// Grab the active queue`
+	s.smux.Lock()
+	q := s.spooling[key]
+	s.smux.Unlock()
+	for q.Len() > 0 {
+		bits := q.Poll().([]byte)
+		msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
+		if err != nil || string(msg.Data) != "ACK" {
+			log.Printf("Error sending packet to %s.  Dropping work :(", key)
+		}
+		runtime.Gosched()
+	}
+
+	s.smux.Lock()
+	delete(s.spooling, key)
+	s.smux.Unlock()
 }
 
 // handleEmit deals with clients emits requests

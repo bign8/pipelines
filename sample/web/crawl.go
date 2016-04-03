@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/bign8/pipelines"
 	"github.com/jackdanger/collectlinks"
@@ -40,7 +39,7 @@ func (c *Crawler) ProcessRecord(record *pipelines.Record) error {
 }
 
 func (c *Crawler) crawl(record *pipelines.Record, uri string) error {
-	start := time.Now()
+	// start := time.Now()
 	myURL, err := url.Parse(uri)
 	if err != nil {
 		return fmt.Errorf("malformed URL: %s", uri)
@@ -83,7 +82,7 @@ func (c *Crawler) crawl(record *pipelines.Record, uri string) error {
 	for link := range unique {
 		pipelines.EmitRecord("index_request", record.New(link))
 	}
-	log.Printf("Crawl Duration: %s", time.Since(start))
+	// log.Printf("Crawl Duration: %s", time.Since(start))
 	// panic("test")
 	return nil
 }

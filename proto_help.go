@@ -21,3 +21,8 @@ func NewRecord(data string) *Record {
 		Data:          data,
 	}
 }
+
+// ServiceKey generates a worker address for the worker designed to execute this work
+func (w Work) ServiceKey() string {
+	return w.Service + "." + w.Key
+}
