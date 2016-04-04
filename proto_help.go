@@ -10,6 +10,17 @@ func (r *Record) New(data string) *Record {
 		CorrelationID: r.CorrelationID,
 		Guid:          utils.RandUint64(),
 		Data:          data,
+		Test:          r.Test,
+	}
+}
+
+// AsTest constructs a copy of this record intended for test routing
+func (r Record) AsTest() *Record {
+	return &Record{
+		CorrelationID: r.CorrelationID,
+		Guid:          utils.RandUint64(),
+		Data:          r.Data,
+		Test:          true,
 	}
 }
 

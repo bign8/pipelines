@@ -50,7 +50,7 @@ func (s *server) handleLoad(m *nats.Msg) {
 
 	// Initialize nodes into the server
 	for name, config := range nodes {
-		node := NewNode(name, config)
+		node := NewNode(name, config, s.isTest)
 		for streamName := range config.In {
 			s.Streams[streamName] = append(s.Streams[streamName], node)
 		}
