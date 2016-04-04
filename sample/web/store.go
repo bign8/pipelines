@@ -36,7 +36,7 @@ func (s *Storer) ProcessTimer(timer *pipelines.Timer) error {
 
 // ProcessRecord checks if a value is already indexed, if not, emitted as crawl_request
 func (s *Storer) ProcessRecord(record *pipelines.Record) error {
-	log.Printf("Storing Data: %v", record.Data)
+	// log.Printf("Storing Data: %v", record.Data)
 	_, err := s.f.WriteString(record.Data + "\n")
 	if err != nil {
 		log.Printf("err: %s", err) // TODO: make fatal

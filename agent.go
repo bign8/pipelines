@@ -2,6 +2,7 @@ package pipelines
 
 import (
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bign8/pipelines/utils"
@@ -15,7 +16,7 @@ type agent struct {
 	inbox chan *Work
 }
 
-func (a *agent) start() (<-chan *Work, chan<- bool) {
+func (a *agent) start() (<-chan *Work, chan<- stater) {
 	a.conn.Subscribe("pipeliens.agent."+a.ID+".enqueue", a.enqueue)
 	a.conn.Subscribe("pipelines.agent.search", a.search)
 
@@ -50,17 +51,17 @@ func (a *agent) enqueue(m *nats.Msg) {
 	a.conn.Publish(m.Reply, []byte("+"))
 }
 
-func (a *agent) buffer() (<-chan *Work, chan<- bool) {
+func (a *agent) buffer() (<-chan *Work, chan<- stater) {
 	outbox := make(chan *Work)
-	completed := make(chan bool)
-	stats := make(map[string]int64)
+	completed := make(chan stater)
 
 	go func() {
 		const maxRunning = 10
 
 		pending := utils.NewQueue()
+		stats := make(map[string]int64)
 		ticker := time.Tick(5 * time.Second)
-		var active, lastLength, lastActive, added = 0, -1, -1, 0
+		var active, lastLength, lastActive = 0, -1, -1
 
 		for {
 			var first *Work
@@ -73,10 +74,12 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 			select {
 			case work := <-a.inbox:
 				pending.Push(work)
-				added++
+				stats["enqueued_"+work.Service]++
 			case starting <- first:
 				active++
-			case <-completed:
+			case stat := <-completed:
+				stats["duration_"+stat.Subject] += stat.Duration
+				stats["completed_"+stat.Subject]++
 				active--
 				a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 			case <-ticker:
@@ -87,9 +90,12 @@ func (a *agent) buffer() (<-chan *Work, chan<- bool) {
 				}
 
 				// REPORT ANALYTICS ALL THE TIME!!!
-				// bits := fmt.Sprintf("%s %d %d %d", a.ID, length, active, added)
-				// a.conn.Publish("pipelines.stats", []byte(bits))
-				// added = 0
+				for key, value := range stats {
+					if value != 0 {
+						a.conn.Publish("pipelines.stats."+key, []byte(strconv.FormatInt(value, 10)))
+						stats[key] = 0
+					}
+				}
 			}
 		}
 	}()

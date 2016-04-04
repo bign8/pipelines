@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,9 +54,21 @@ func runStats(cmd *Command, args []string) {
 
 		// Time to print some stats
 		case <-tick:
-			new = fmt.Sprintf("Stats: %+v", memory)
+
+			// Consistent printing of keys
+			var keys []string
+			for k := range memory {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for i, k := range keys {
+				keys[i] = fmt.Sprintf("%s:%d", k, memory[k])
+			}
+
+			new = fmt.Sprintf("map[%s]", strings.Join(keys, " "))
+			// new = fmt.Sprintf("Stats: %+v", memory)
 			if new != old {
-				log.Printf("Stats [%s]: %s", time.Now(), new)
+				log.Print(new)
 				old = new
 			}
 		}

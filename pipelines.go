@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +25,11 @@ var (
 	registerLock       sync.RWMutex
 	registeredServices = make(map[string]Computation)
 )
+
+type stater struct {
+	Subject  string
+	Duration int64
+}
 
 // Register registers a parent instance of a computaton as a potential worker
 func Register(name string, comp Computation) {
@@ -110,7 +116,7 @@ func Run() {
 	}
 }
 
-func doComputation(work *Work, completed chan<- bool) {
+func doComputation(work *Work, completed chan<- stater) {
 	start := time.Now()
 
 	// Grab the registered worker from my list of services
@@ -130,8 +136,10 @@ func doComputation(work *Work, completed chan<- bool) {
 	}
 
 	// Private inbox for node
-	inbox := make(chan interface{})
-	todo := utils.Buffer(work.Service+"."+work.Key, inbox, ctx.Done())
+	inbox := make(chan interface{}, 100)
+	todo := utils.Buffer(work.ServiceKey(), inbox, ctx.Done())
+	enqueued := int64(0)
+	started := int64(0)
 	inbox <- work.GetRecord()
 
 	// Start listener subscription for node
@@ -145,20 +153,41 @@ func doComputation(work *Work, completed chan<- bool) {
 			return
 		}
 		inbox <- w.GetRecord()
+		enqueued++
 	})
 	sub2, _ := conn.Subscribe("pipelines.node."+work.ServiceKey()+".ping", func(m *nats.Msg) {
 		conn.Publish(m.Reply, []byte("PONG"))
 	})
 
 	// Blocking call
+	then := time.Now().Add(5 * time.Second)
 	for item := range todo {
+		started++
 		c.ProcessRecord(item.(*Record))
+
+		// Broadcast updates almost every 5 seconds (TICKER is a memory leak, so doing it this way for now...)
+		if time.Now().After(then) {
+			then = time.Now().Add(5 * time.Second)
+			if enqueued > 0 {
+				conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+			}
+			if started > 0 {
+				conn.Publish("pipelines.stats.started_"+work.Service, []byte(strconv.FormatInt(started, 10)))
+			}
+		}
 	}
 
+	// Sent remaining enqueued items
+	if enqueued > 0 {
+		conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+	}
+
+	// Cleanup subscriptions
 	sub1.Unsubscribe()
 	sub2.Unsubscribe()
-	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, time.Since(start))
-	completed <- true
+	elapsed := time.Since(start)
+	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, elapsed)
+	completed <- stater{Subject: work.Service, Duration: int64(elapsed.Seconds() * 1000)}
 }
 
 // Initialize internal memory model
