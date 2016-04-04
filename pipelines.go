@@ -1,15 +1,17 @@
 package pipelines
 
 import (
-	"encoding/base64"
 	"errors"
 	"log"
 	_ "net/http/pprof" // Used for the profiling of all pipelines servers/nodes/workers
 	"os"
-	"strings"
+	"os/signal"
+	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
 	"golang.org/x/net/context"
@@ -17,45 +19,29 @@ import (
 
 //go:generate protoc --go_out=. pipelines.proto
 
-// ErrNoStartNeeded is returned when the start method does not actually need to be called
-var ErrNoStartNeeded = errors.New("No Start Necessary...")
+// Registration dictionary for Services (borrowed from GOB: https://golang.org/src/encoding/gob/type.go?s=24183:24232#L808)
+var (
+	conn               *nats.Conn // Local scoped NATS connection instance
+	registerLock       sync.RWMutex
+	registeredServices = make(map[string]Computation)
+)
 
-// Local scoped NATS connection instance
-var conn *nats.Conn
-
-// Local instances of computations to be ran
-var instances api
-
-type api map[string]Computation
-
-func (a api) handleWork(m *nats.Msg) {
-	if m.Reply != "" {
-		conn.Publish(m.Reply, []byte("ACK"))
-	}
-
-	// Unmarshal message
-	var work Work
-	if err := proto.Unmarshal(m.Data, &work); err != nil {
-		log.Fatalf("unmarshaling error: %v", err)
-		return
-	}
-
-	// Find worker
-	c, ok := a[work.Service]
-	if !ok {
-		log.Printf("service not found: %v", work.Service)
-		return
-	}
-	c.ProcessRecord(work.GetRecord())
+type stater struct {
+	Subject  string
+	Duration int64
 }
 
 // Register registers a parent instance of a computaton as a potential worker
 func Register(name string, comp Computation) {
-	if _, ok := instances[name]; ok {
-		panic(errors.New("Already assigned computation"))
+	if name == "" {
+		panic("attempt to register empty name")
 	}
-	instances[name] = comp
-	initConn()
+	registerLock.Lock()
+	defer registerLock.Unlock()
+	if _, ok := registeredServices[name]; ok {
+		panic("already assigned computation")
+	}
+	registeredServices[name] = comp
 }
 
 // Computation is the base interface for all working operations
@@ -69,112 +55,146 @@ type Computation interface {
 
 // EmitRecord transmits a record to the system
 func EmitRecord(stream string, record *Record) error {
+	if conn == nil {
+		return errors.New("Must start pipelines before emitting any records.")
+	}
 	emit := &Emit{
 		Record: record,
 		Stream: stream,
 	}
-	data, err := proto.Marshal(emit)
+	bits, err := proto.Marshal(emit)
 	if err != nil {
 		return err
 	}
-	return conn.Publish("pipelines.server.emit", data)
+	return conn.Publish("pipelines.server.emit", bits)
 }
 
-// Run is the primary sleep for the operating loop
+// Run starts the entire node
 func Run() {
-	var service, key, startWork string
-	envs := os.Environ()
-	for _, env := range envs {
-		idx := strings.Index(env, "=")
-		switch {
-		case strings.HasPrefix(env, "PIPELINE_SERVICE="):
-			service = env[idx+1:]
-		case strings.HasPrefix(env, "PIPELINE_KEY="):
-			key = env[idx+1:]
-		case strings.HasPrefix(env, "PIPELINE_START_WORK="):
-			startWork = env[idx+1:]
-		default:
-		}
-	}
-
-	// Manual started comand configuration
-	if startWork == "" && service == "" && key == "" {
-		log.Println("No GUID/Service/Key provided; Firing starts + leaving")
-		var wg sync.WaitGroup
-		wg.Add(len(instances))
-		for _, worker := range instances {
-			go func(worker Computation) {
-				worker.Start(context.TODO()) // TODO: deal with error
-				wg.Done()
-			}(worker)
-		}
-		wg.Wait()
-		return
-	}
-
-	// Automated start ... start conn the correct way an things...
-	ctx := context.WithValue(context.TODO(), "key", key)
-	initConn()
-	comp, ok := instances[service]
-	if !ok {
-		log.Fatalf("Service not found in cmd: %s", service)
-	}
-	ctx, err := comp.Start(ctx)
-	if err != nil && err != ErrNoStartNeeded {
-		log.Fatalf("Service could not start: %s : %s", service, err)
-	}
-	conn.Subscribe("pipelines.node."+service+"."+key, instances.handleWork)
-
-	// Process the starting piece of work
-	decoded, err := base64.StdEncoding.DecodeString(startWork)
-	if err == nil {
-		msg := nats.Msg{Data: decoded}
-		instances.handleWork(&msg)
-	} else {
-		log.Fatalf("String Decode error: %s", err)
-	}
-
-	// Wait for compeltion
-	<-ctx.Done()
-	time.Sleep(10)
-	conn.Publish("pipelines.server.agent.stop", []byte(service+"."+key))
-	return
-}
-
-// New constructs new record based on a source record
-func (r *Record) New(data string) *Record {
-	return &Record{
-		CorrelationID: r.CorrelationID,
-		Guid:          0, // TODO: generate at random
-		Data:          data,
-	}
-}
-
-// NewRecord constructs a completely new record
-func NewRecord(data string) *Record {
-	return &Record{
-		CorrelationID: 0, // TODO
-		Guid:          0, // TODO
-		Data:          data,
-	}
-}
-
-// Startup nats connection
-func initConn() {
+	// TODO: parse URL from parameters!
+	var err error
 	if conn == nil {
-		var err error
 		conn, err = nats.Connect(nats.DefaultURL, nats.Name("Node"))
 		if err != nil {
 			panic(err)
 		}
 	}
+
+	// Find diling address for agent to listen to; TODO: make this suck less
+	var msg *nats.Msg
+	err = errors.New("starting")
+	details := []byte(utils.GetIPAddrDebugString())
+	for ctr := uint(1); err != nil; ctr = ctr << (1 - ctr>>4) { // double until 2^4 = 16
+		log.Printf("GET UUID: Timeout %ds", ctr)
+		msg, err = conn.Request("pipelines.server.agent.start", details, time.Second*time.Duration(ctr))
+	}
+	log.Printf("SET UUID: %s", msg.Data)
+
+	// Listen to terminal signals // TODO: properly shutdown processes + buffers
+	// https://golang.org/pkg/os/signal/#example_Notify
+	dying := make(chan os.Signal, 1)
+	signal.Notify(dying, os.Interrupt)
+	go func() {
+		s := <-dying
+		log.Printf("Got signal: %s", s)
+		conn.Publish("pipelines.server.agent.die", msg.Data)
+		runtime.Gosched()
+		panic("death")
+	}()
+
+	// Actually start agent
+	a := &agent{
+		ID:   string(msg.Data),
+		conn: conn,
+	}
+	toProcess, completed := a.start()
+
+	// Locking for loop
+	log.Printf("Starting main loop")
+	for work := range toProcess {
+		go doComputation(work, completed)
+	}
+}
+
+func doComputation(work *Work, completed chan<- stater) {
+	start := time.Now()
+
+	// Grab the registered worker from my list of services
+	registerLock.RLock()
+	c, ok := registeredServices[work.Service]
+	registerLock.RUnlock()
+	if !ok {
+		log.Printf("service not found: %v", work.Service)
+		return
+	}
+
+	// Start the given service
+	ctx := context.WithValue(context.TODO(), "key", work.Key)
+	ctx, err := c.Start(ctx)
+	if err != nil {
+		log.Printf("Service could not start: %s : %s", work.Service, err)
+	}
+
+	// Private inbox for node
+	inbox := make(chan interface{}, 100)
+	todo := utils.Buffer(work.ServiceKey(), inbox, ctx.Done())
+	enqueued := int64(0)
+	started := int64(0)
+	inbox <- work.GetRecord()
+
+	// Start listener subscription for node
+	sub1, _ := conn.Subscribe("pipelines.node."+work.ServiceKey(), func(m *nats.Msg) {
+		if m.Reply != "" {
+			conn.Publish(m.Reply, []byte("ACK"))
+		}
+		var w Work
+		if err := proto.Unmarshal(m.Data, &w); err != nil {
+			log.Printf("Unable to unmarshal work for service %s: %s", work.Service, err)
+			return
+		}
+		inbox <- w.GetRecord()
+		enqueued++
+	})
+	sub2, _ := conn.Subscribe("pipelines.node."+work.ServiceKey()+".ping", func(m *nats.Msg) {
+		conn.Publish(m.Reply, []byte("PONG"))
+	})
+
+	// Blocking call
+	then := time.Now().Add(5 * time.Second)
+	for item := range todo {
+		started++
+		c.ProcessRecord(item.(*Record))
+
+		// Broadcast updates almost every 5 seconds (TICKER is a memory leak, so doing it this way for now...)
+		if time.Now().After(then) {
+			then = time.Now().Add(5 * time.Second)
+			if enqueued > 0 {
+				conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+			}
+			if started > 0 {
+				conn.Publish("pipelines.stats.started_"+work.Service, []byte(strconv.FormatInt(started, 10)))
+			}
+		}
+	}
+
+	// Sent remaining enqueued items
+	if enqueued > 0 {
+		conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+	}
+
+	// Cleanup subscriptions
+	sub1.Unsubscribe()
+	sub2.Unsubscribe()
+	elapsed := time.Since(start)
+	log.Printf("Completing Work [%s]: %s: %s", work.Service, work.Key, elapsed)
+	completed <- stater{Subject: work.Service, Duration: int64(elapsed.Seconds() * 1000)}
 }
 
 // Initialize internal memory model
 func init() {
-	instances = make(api)
 	// go func() {
 	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
 	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
 	// }()
+	log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
 }

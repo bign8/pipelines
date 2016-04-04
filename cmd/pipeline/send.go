@@ -24,7 +24,7 @@ func runFix(cmd *Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("Sending data: %v", args)
+	log.Printf("Sending on '%v' data: '%v'", args[0], args[1])
 
 	emit := pipelines.Emit{
 		Record: pipelines.NewRecord(args[1]),

@@ -1,11 +1,12 @@
-package agent
+package utils
 
 import (
 	"net"
 	"strings"
 )
 
-func getIPAddrDebugString() string {
+// GetIPAddrDebugString gives a machine itentifiying string
+func GetIPAddrDebugString() string {
 	// Get IP address for logging purposes; TODO: make this suck less
 	unique := make(map[string]net.IP)
 	var IPs []string

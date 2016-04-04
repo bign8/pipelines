@@ -6,6 +6,9 @@ import (
 	"github.com/bign8/pipelines/utils"
 )
 
+// MineConstant is the value tha is returned for constant emitters
+const MineConstant = "CONSTANT"
+
 // Miner is a message miner
 type Miner func(string) string
 
@@ -24,7 +27,7 @@ func NewMiner(config string) Miner {
 }
 
 func constMiner(_ string) string {
-	return "CONSTANT"
+	return MineConstant
 }
 
 func randMiner(_ string) string {
