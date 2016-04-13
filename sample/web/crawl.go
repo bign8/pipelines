@@ -20,7 +20,7 @@ type Crawler struct {
 }
 
 // Start does nothing
-func (c *Crawler) Start(ctx context.Context) (context.Context, error) {
+func (c *Crawler) Start(ctx context.Context, _ func()) (context.Context, error) {
 	ctx, c.done = context.WithCancel(ctx)
 	return ctx, nil
 }

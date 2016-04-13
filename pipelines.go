@@ -46,7 +46,7 @@ func Register(name string, comp Computation) {
 
 // Computation is the base interface for all working operations
 type Computation interface {
-	Start(context.Context) (context.Context, error)
+	Start(context.Context, func()) (context.Context, error)
 	ProcessRecord(*Record) error
 	ProcessTimer(*Timer) error
 	// GetState() interface{} // Called after timer and process calls to store internal state
@@ -130,7 +130,9 @@ func doComputation(work *Work, completed chan<- stater) {
 
 	// Start the given service
 	ctx := context.WithValue(context.TODO(), "key", work.Key)
-	ctx, err := c.Start(ctx)
+	ctx, err := c.Start(ctx, func() {
+		conn.Publish("pipelines.kill", []byte(""))
+	})
 	if err != nil {
 		log.Printf("Service could not start: %s : %s", work.Service, err)
 	}
