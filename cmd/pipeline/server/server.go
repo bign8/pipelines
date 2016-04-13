@@ -27,6 +27,7 @@ type server struct {
 	IDs      map[string]bool
 	spooling map[string]*utils.Queue
 	smux     sync.Mutex
+	start    time.Time
 }
 
 // Run starts the Pipeline Server
@@ -105,7 +106,11 @@ func Run(url string) {
 
 	// s.conn.Subscribe("pipelines.node.agent.>", ) // handle msg based on payload
 	s.conn.Subscribe("pipelines.kill", func(m *nats.Msg) {
+		log.Printf("Duration: %s", time.Since(s.start))
 		s.Shutdown()
+	})
+	s.conn.Subscribe("pipelines.start", func(m *nats.Msg) {
+		s.start = time.Now()
 	})
 
 	// Announce startup

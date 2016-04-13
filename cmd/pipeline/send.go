@@ -35,5 +35,6 @@ func runFix(cmd *Command, args []string) {
 	if err != nil {
 		log.Fatalf("proto.Marshal err: %s", err)
 	}
+	nc.Publish("pipelines.start", []byte("now"))
 	nc.Publish("pipelines.server.emit", bits)
 }
