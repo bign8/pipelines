@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"sync"
 
 	"github.com/bign8/pipelines"
 	"golang.org/x/net/context"
@@ -10,13 +11,14 @@ import (
 
 // THRESHOLD is the maximum number of nodes in the currently craweld site
 // TODO: REMOVE THE CONCEPT OF THIS THRESHOLD SHIZ
-const THRESHOLD = 1e9
+const THRESHOLD = 5e1
 
 // Storer is the storer type
 type Storer struct {
 	f    *os.File
 	ctr  uint64
 	kill func()
+	l    sync.Mutex
 }
 
 // Start starts the necessary persistence for the module
@@ -44,6 +46,8 @@ func (s *Storer) ProcessTimer(timer *pipelines.Timer) error {
 
 // ProcessRecord checks if a value is already indexed, if not, emitted as crawl_request
 func (s *Storer) ProcessRecord(record *pipelines.Record) error {
+	s.l.Lock()
+	defer s.l.Unlock()
 	// log.Printf("Storing Data: %v", record.Data)
 	_, err := s.f.WriteString(record.Data + "\n")
 	if err != nil {

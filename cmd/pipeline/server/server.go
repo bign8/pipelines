@@ -104,6 +104,9 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.agent.die", s.handleAgentDie)
 
 	// s.conn.Subscribe("pipelines.node.agent.>", ) // handle msg based on payload
+	s.conn.Subscribe("pipelines.kill", func(m *nats.Msg) {
+		s.Shutdown()
+	})
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))

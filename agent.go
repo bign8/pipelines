@@ -56,7 +56,7 @@ func (a *agent) buffer() (<-chan *Work, chan<- stater) {
 	completed := make(chan stater)
 
 	go func() {
-		const maxRunning = 10
+		const maxRunning = 1000
 
 		pending := utils.NewQueue()
 		stats := make(map[string]int64)

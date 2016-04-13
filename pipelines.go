@@ -138,7 +138,7 @@ func doComputation(work *Work, completed chan<- stater) {
 	}
 
 	// Private inbox for node
-	inbox := make(chan interface{}, 100)
+	inbox := make(chan interface{}, 1000)
 	todo := utils.Buffer(work.ServiceKey(), inbox, ctx.Done())
 	enqueued := int64(0)
 	started := int64(0)
@@ -198,5 +198,5 @@ func init() {
 	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
 	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
 	// }()
-	log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
+	// log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
 }
