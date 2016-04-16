@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/bign8/pipelines"
 	"github.com/jackdanger/collectlinks"
@@ -45,7 +46,12 @@ func (c *Crawler) crawl(record *pipelines.Record, uri string) error {
 		return fmt.Errorf("malformed URL: %s", uri)
 	}
 
-	resp, err := http.Get(uri)
+	// Initialize a client that times out
+	client := http.Client{
+		Timeout: 3 * time.Second,
+	}
+
+	resp, err := client.Get(uri)
 	if err != nil {
 		log.Printf("get error: %s", err)
 		return err
@@ -84,7 +90,7 @@ func (c *Crawler) crawl(record *pipelines.Record, uri string) error {
 	}
 	// log.Printf("Crawl Duration: %s", time.Since(start))
 	// panic("test")
-	return nil
+	return pipelines.ErrKillMeNow
 }
 
 // NewCrawler constructs a Crawler object

@@ -11,7 +11,7 @@ import (
 
 // THRESHOLD is the maximum number of nodes in the currently craweld site
 // TODO: REMOVE THE CONCEPT OF THIS THRESHOLD SHIZ
-const THRESHOLD = 5e1
+const THRESHOLD = 1e2
 
 // Storer is the storer type
 type Storer struct {

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,9 @@ var (
 	registerLock       sync.RWMutex
 	registeredServices = make(map[string]Computation)
 )
+
+// ErrKillMeNow is used for now to allow the clients to forcaviley kill themselves
+var ErrKillMeNow = errors.New("KILL ME NOW")
 
 type stater struct {
 	Subject  string
@@ -74,7 +78,14 @@ func Run() {
 	// TODO: parse URL from parameters!
 	var err error
 	if conn == nil {
-		conn, err = nats.Connect(nats.DefaultURL, nats.Name("Node"))
+		addr := nats.DefaultURL
+		for _, e := range os.Environ() {
+			pair := strings.Split(e, "=")
+			if pair[0] == "NATS_ADDR" {
+				addr = pair[1]
+			}
+		}
+		conn, err = nats.Connect(addr, nats.Name("Node"))
 		if err != nil {
 			panic(err)
 		}
@@ -101,6 +112,10 @@ func Run() {
 		runtime.Gosched()
 		panic("death")
 	}()
+
+	conn.Subscribe("pipelines.kill", func(m *nats.Msg) {
+		dying <- os.Interrupt
+	})
 
 	// Actually start agent
 	a := &agent{
@@ -129,7 +144,8 @@ func doComputation(work *Work, completed chan<- stater) {
 	}
 
 	// Start the given service
-	ctx := context.WithValue(context.TODO(), "key", work.Key)
+	ctx, dieHard := context.WithCancel(context.TODO())
+	ctx = context.WithValue(ctx, "key", work.Key)
 	ctx, err := c.Start(ctx, func() {
 		conn.Publish("pipelines.kill", []byte(""))
 	})
@@ -138,7 +154,7 @@ func doComputation(work *Work, completed chan<- stater) {
 	}
 
 	// Private inbox for node
-	inbox := make(chan interface{}, 1000)
+	inbox := make(chan interface{}, 10) // buffer before queue
 	todo := utils.Buffer(work.ServiceKey(), inbox, ctx.Done())
 	enqueued := int64(0)
 	started := int64(0)
@@ -162,14 +178,21 @@ func doComputation(work *Work, completed chan<- stater) {
 	})
 
 	// Blocking call
-	then := time.Now().Add(5 * time.Second)
-	for item := range todo {
-		started++
-		c.ProcessRecord(item.(*Record))
-
-		// Broadcast updates almost every 5 seconds (TICKER is a memory leak, so doing it this way for now...)
-		if time.Now().After(then) {
-			then = time.Now().Add(5 * time.Second)
+	// then := time.Now().Add(5 * time.Second)
+	ticker := time.Tick(5 * time.Second)
+all:
+	for {
+		select {
+		case item := <-todo:
+			if item == nil {
+				break all
+			}
+			started++
+			err := c.ProcessRecord(item.(*Record))
+			if err != nil {
+				break all
+			}
+		case <-ticker:
 			if enqueued > 0 {
 				conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
 			}
@@ -178,6 +201,7 @@ func doComputation(work *Work, completed chan<- stater) {
 			}
 		}
 	}
+	dieHard()
 
 	// Sent remaining enqueued items
 	if enqueued > 0 {

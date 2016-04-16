@@ -2,7 +2,9 @@ package server
 
 import (
 	"container/heap"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"runtime"
 	"strings"
@@ -48,8 +50,9 @@ func Run(url string) {
 		panic(err)
 	}
 
-	static := make(chan pipelines.Work)
-	toRequest := make(chan pipelines.Work)
+	// Static sizes allow for buffering
+	static := make(chan pipelines.Work, 10)
+	toRequest := make(chan pipelines.Work, 10)
 
 	// Start Request manager queue
 	q := make(chan pipelines.Work)
@@ -75,24 +78,20 @@ func Run(url string) {
 	}()
 	s.requestQ = q
 
-	// fixed size pool of routers
-	for i := 0; i < 10; i++ {
-		go func() {
-			for request := range toRequest {
-				s.routeRequest(request)
-			}
-		}()
-	}
+	// route requester
+	go func() {
+		for request := range toRequest {
+			s.routeRequest(request)
+		}
+	}()
 
-	// fixed size pool of forwarders
+	// remote forwarders
 	// TODO: make this smart!!! (only emit one start request to an agent + build queue)
-	for i := 0; i < 10; i++ {
-		go func() {
-			for request := range static {
-				s.forwardRequest(request, toRequest)
-			}
-		}()
-	}
+	go func() {
+		for request := range static {
+			s.forwardRequest(request, toRequest)
+		}
+	}()
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
@@ -115,6 +114,13 @@ func Run(url string) {
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
+
+	// HACK to manually fire startup
+	config, err := ioutil.ReadFile("sample/web/pipeline.yml")
+	if err != nil {
+		panic(err)
+	}
+	s.conn.Publish("pipelines.server.load", config)
 	<-s.Running
 }
 
@@ -197,6 +203,10 @@ func (s *server) handleAgentDie(msg *nats.Msg) {
 func (s *server) routeRequest(request pipelines.Work) (err error) {
 	// Worker is not active, need to pass to least loaded agent
 	s.pmux.Lock()
+	if s.pool.Len() <= 0 {
+		s.pmux.Unlock()
+		return errors.New("No agents to route request")
+	}
 	agent := s.pool.Peek().(*Agent)
 	agent.processing++
 	heap.Fix(s.pool, agent.index)
@@ -229,6 +239,16 @@ func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.W
 		if q, ok := s.spooling[key]; ok {
 			q.Push(bits)
 		} else {
+
+			// Verify there are any workers out there
+			s.pmux.RLock()
+			l := s.pool.Len()
+			s.pmux.RUnlock()
+			if l <= 0 {
+				log.Printf("No agents start initial request, not spooling!")
+				return
+			}
+
 			notFound <- work
 			q = utils.NewQueue()
 			s.spooling[key] = q
