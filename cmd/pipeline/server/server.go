@@ -118,9 +118,10 @@ func Run(url string) {
 	// HACK to manually fire startup
 	config, err := ioutil.ReadFile("sample/web/pipeline.yml")
 	if err != nil {
-		panic(err)
+		log.Printf("Cannot send default load command: %s", err)
+	} else {
+		s.conn.Publish("pipelines.server.load", config)
 	}
-	s.conn.Publish("pipelines.server.load", config)
 	<-s.Running
 }
 

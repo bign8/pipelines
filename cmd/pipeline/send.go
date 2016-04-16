@@ -28,6 +28,7 @@ func runFix(cmd *Command, args []string) {
 			addr = pair[1]
 		}
 	}
+	log.Printf("Attempting to connect to: %s", addr)
 	nc, err := nats.Connect(addr, nats.Name("CLI Send"))
 	defer nc.Close()
 	if err != nil {
