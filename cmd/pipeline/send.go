@@ -30,10 +30,10 @@ func runFix(cmd *Command, args []string) {
 	}
 	log.Printf("Attempting to connect to: %s", addr)
 	nc, err := nats.Connect(addr, nats.Name("CLI Send"))
-	defer nc.Close()
 	if err != nil {
 		panic(err)
 	}
+	defer nc.Close()
 	log.Printf("Sending on '%v' data: '%v'", args[0], args[1])
 
 	emit := pipelines.Emit{

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io/ioutil"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/nats-io/nats"
 )
@@ -26,11 +28,19 @@ func runLoad(cmd *Command, args []string) {
 	}
 
 	// Open nats conn
-	nc, err := nats.Connect(nats.DefaultURL)
-	defer nc.Close()
+	addr := nats.DefaultURL
+	for _, e := range os.Environ() {
+		pair := strings.Split(e, "=")
+		if pair[0] == "NATS_ADDR" {
+			addr = pair[1]
+		}
+	}
+	log.Printf("Attempting to connect to: %s", addr)
+	nc, err := nats.Connect(addr)
 	if err != nil {
 		panic(err)
 	}
+	defer nc.Close()
 
 	log.Printf("Sending load: %s", args[0]+"/pipeline.yml")
 	nc.Publish("pipelines.server.load", config)

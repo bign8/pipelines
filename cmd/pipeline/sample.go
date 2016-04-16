@@ -17,7 +17,7 @@ import (
 
 // THRESHOLD is the maximum number of nodes in the currently craweld site
 // TODO: REMOVE THE CONCEPT OF THIS THRESHOLD SHIZ
-const THRESHOLD = 1e2
+const THRESHOLD = 1e7
 
 var cmdSample = &Command{
 	Run:       runSample,

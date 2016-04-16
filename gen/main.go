@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const n = 1e2
+const n = 1.1e7
 
 var mask = fmt.Sprintf("%%0%dd", int(math.Log10(n)))
 
