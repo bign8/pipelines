@@ -262,34 +262,40 @@ func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.W
 // if so it dumps the queue into the individual (runs as go-routine)
 func (s *server) checkSpool(key string) {
 
-	// Sit and spin until target is active
-	// TODO: allow for timeout here (lost opening request?)
-	for {
-		time.Sleep(time.Second)
-		msg, err := s.conn.Request("pipelines.node."+key+".ping", []byte("ping"), time.Second)
-		if err != nil || string(msg.Data) != "PONG" {
-			log.Printf("Service [%s]: not found yet... trying again in 1s", key)
-		} else {
-			break
-		}
-	}
-
-	// Grab the active queue`
 	s.smux.Lock()
 	q := s.spooling[key]
 	s.smux.Unlock()
-	for q.Len() > 0 {
-		bits := q.Poll().([]byte)
-		msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
-		if err != nil || string(msg.Data) != "ACK" {
-			log.Printf("Error sending packet to %s.  Dropping work :(", key)
-		}
-		runtime.Gosched()
-	}
 
-	s.smux.Lock()
-	delete(s.spooling, key)
-	s.smux.Unlock()
+	var bits []byte
+
+	for {
+		// Sit and spin case
+		if q.Len() <= 0 {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		// Check if worker is available
+		msg, err := s.conn.Request("pipelines.node."+key+".ping", []byte("ping"), time.Second)
+		if err != nil || string(msg.Data) != "PONG" {
+			log.Printf("Service [%s]: not found yet... trying again in 1s", key)
+			continue
+		}
+
+		// Dump the queue as necessary
+		for q.Len() > 0 {
+			if bits == nil {
+				bits = q.Poll().([]byte)
+			}
+			msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
+			if err != nil || string(msg.Data) != "ACK" {
+				log.Printf("Error sending packet to %s.  Dropping work :(", key)
+				break
+			}
+			bits = nil
+			runtime.Gosched()
+		}
+	}
 }
 
 // handleEmit deals with clients emits requests
