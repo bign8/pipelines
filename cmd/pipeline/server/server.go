@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,7 +70,7 @@ func Run(url string) {
 			ticker := time.Tick(5 * time.Second)
 			select {
 			case request := <-q:
-				if request.Key == MineConstant {
+				if strings.HasPrefix(request.Key, MineConstant) {
 					static <- request
 				} else {
 					toRequest <- request
