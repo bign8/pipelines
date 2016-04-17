@@ -72,16 +72,6 @@ func (a *agent) buffer() (<-chan *Work, chan<- stater) {
 			}
 
 			select {
-			case work := <-a.inbox:
-				pending.Push(work)
-				stats["enqueued_"+work.Service]++
-			case starting <- first:
-				active++
-			case stat := <-completed:
-				stats["duration_"+stat.Subject] += stat.Duration
-				stats["completed_"+stat.Subject]++
-				active--
-				a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 			case <-ticker:
 				length := pending.Len()
 				if length != lastLength || active != lastActive {
@@ -96,6 +86,16 @@ func (a *agent) buffer() (<-chan *Work, chan<- stater) {
 						stats[key] = 0
 					}
 				}
+			case work := <-a.inbox:
+				pending.Push(work)
+				stats["enqueued_"+work.Service]++
+			case starting <- first:
+				active++
+			case stat := <-completed:
+				stats["duration_"+stat.Subject] += stat.Duration
+				stats["completed_"+stat.Subject]++
+				active--
+				a.conn.Publish("pipelines.server.agent.stop", []byte(a.ID))
 			}
 		}
 	}()
