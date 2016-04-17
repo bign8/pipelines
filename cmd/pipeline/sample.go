@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,7 @@ import (
 
 // THRESHOLD is the maximum number of nodes in the currently craweld site
 // TODO: REMOVE THE CONCEPT OF THIS THRESHOLD SHIZ
-const THRESHOLD = 1e7
+var THRESHOLD = uint64(1e4)
 
 var cmdSample = &Command{
 	Run:       runSample,
@@ -26,6 +27,18 @@ var cmdSample = &Command{
 }
 
 func runSample(cmd *Command, args []string) {
+	for _, e := range os.Environ() {
+		pair := strings.Split(e, "=")
+		if pair[0] == "PIPELINE_THRESHOLD" {
+			i, err := strconv.ParseUint(pair[1], 10, 64)
+			if err == nil {
+				THRESHOLD = i
+			} else {
+				log.Printf("Error processing PIPELINE_THRESHOLD: %s", err)
+			}
+		}
+	}
+
 	pipelines.Register("crawl", NewCrawler())
 	pipelines.Register("index", NewIndexer())
 	pipelines.Register("store", NewStorer())
