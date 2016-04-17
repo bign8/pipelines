@@ -17,6 +17,7 @@ message Record {
   uint64 correlationID = 1; // Global Work object Identifier
   uint64 guid = 2;          // Global Unique Identifier
   string data = 3;          // Actual data to be processed
+  bool   test = 4;          // is necessary to test?
 }
 
 

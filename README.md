@@ -15,7 +15,7 @@ $ gnatsd -m 8222
 $ nats-top
 $ export PATH=$PATH:$GOPATH/bin
 $ go install ./...
-$ pipeline server
+$ pipeline server || pipeline server nats://localhsot:4222 --test
 $ pipeline agent  # As many agents as you would like
 $ pipeline load sample/web
 $ pipeline send crawl_request https://en.wikipedia.org/wiki/Main_page

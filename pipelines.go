@@ -70,7 +70,11 @@ func EmitRecord(stream string, record *Record) error {
 	if err != nil {
 		return err
 	}
-	return conn.Publish("pipelines.server.emit", bits)
+	dest := "pipelines.server.emit"
+	if record.Test {
+		dest = "pipelines.garbage" // TODO: a test server that compares data results
+	}
+	return conn.Publish(dest, bits)
 }
 
 // Run starts the entire node

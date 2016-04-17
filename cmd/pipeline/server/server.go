@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +15,6 @@ import (
 	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
-	"gopkg.in/yaml.v2"
 )
 
 // Server ...
@@ -30,6 +29,7 @@ type server struct {
 	spooling map[string]*utils.Queue
 	smux     sync.Mutex
 	start    time.Time
+	isTest   bool
 }
 
 // Run starts the Pipeline Server
@@ -41,6 +41,13 @@ func Run(url string) {
 		pool:     &pool,
 		IDs:      make(map[string]bool), // TODO: make this a point based Agent lookup map
 		spooling: make(map[string]*utils.Queue),
+	}
+
+	// Test to see if test is enabled TODO: make this part of the cmd flags
+	for _, arg := range os.Args {
+		if arg == "--test" {
+			s.isTest = true
+		}
 	}
 
 	// startup connection and various server helpers
@@ -122,6 +129,8 @@ func Run(url string) {
 	} else {
 		s.conn.Publish("pipelines.server.load", config)
 	}
+
+	log.Printf("Test Server Status [--test]: %+v", s.isTest)
 	<-s.Running
 }
 
@@ -320,57 +329,6 @@ func (s *server) handleEmit(m *nats.Msg) {
 	for _, node := range nodes {
 		go node.processEmit(&emit, s.requestQ)
 	}
-}
-
-type dataType struct {
-	Name  string            `yaml:"Name"`
-	Type  string            `yaml:"Type"`
-	CMD   string            `yaml:"CMD,omitempty"`
-	Nodes map[string]string `yaml:"Nodes,omitempty"`
-	In    map[string]string `yaml:"In,omitempty"`
-}
-
-// handleLoad downloads and processes a pipeline configuration file
-func (s *server) handleLoad(m *nats.Msg) {
-	// TODO: accept URL addresses
-	// TODO: Parse bitbucket requests... convert a to b
-	//   a: bitbucket.org/bign8/pipelines/sample/web
-	//   b: https://bitbucket.org/bign8/pipelines/raw/master/sample/web/pipeline.yml
-	// TODO: Parse github requests... convert a to b
-	//   a: github.com/bign8/pipelines/sample/web
-	//   b: https://github.com/bign8/pipelines/raw/master/sample/web/pipeline.yml
-	// log.Printf("Loading Config: %s", m.Data)
-	// resp, err := http.Get("http://" + string(m.Data) + "/pipeline.yml")
-	// if err != nil {
-	// 	log.Printf("Cannot Load: %s", m.Data)
-	// 	return
-	// }
-	// config, err := ioutil.ReadAll(resp.Body)
-
-	nodes := make(map[string]dataType)
-
-	// Parse YAML into memory structure
-	configData := strings.Split(string(m.Data), "---")[1:]
-	for _, configFile := range configData {
-		var config dataType
-		if err := yaml.Unmarshal([]byte("---\n"+configFile), &config); err != nil {
-			log.Printf("error loading config: %s", err)
-			return
-		}
-		if config.Type == "Node" {
-			nodes[config.Name] = config
-		}
-	}
-
-	// Initialize nodes into the server
-	for name, config := range nodes {
-		node := NewNode(name, config)
-		for streamName := range config.In {
-			s.Streams[streamName] = append(s.Streams[streamName], node)
-		}
-	}
-
-	log.Printf("Config: %+v\n", s.Streams)
 }
 
 // Shutdown closes all active subscriptions and kills process
