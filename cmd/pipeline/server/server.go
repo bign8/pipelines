@@ -2,8 +2,11 @@ package server
 
 import (
 	"container/heap"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,7 +16,6 @@ import (
 	"github.com/bign8/pipelines/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/nats-io/nats"
-	"gopkg.in/yaml.v2"
 )
 
 // Server ...
@@ -27,6 +29,8 @@ type server struct {
 	IDs      map[string]bool
 	spooling map[string]*utils.Queue
 	smux     sync.Mutex
+	start    time.Time
+	isTest   bool
 }
 
 // Run starts the Pipeline Server
@@ -40,6 +44,13 @@ func Run(url string) {
 		spooling: make(map[string]*utils.Queue),
 	}
 
+	// Test to see if test is enabled TODO: make this part of the cmd flags
+	for _, arg := range os.Args {
+		if arg == "--test" {
+			s.isTest = true
+		}
+	}
+
 	// startup connection and various server helpers
 	var err error
 	s.conn, err = nats.Connect(url, nats.Name("Server"))
@@ -47,8 +58,9 @@ func Run(url string) {
 		panic(err)
 	}
 
-	static := make(chan pipelines.Work)
-	toRequest := make(chan pipelines.Work)
+	// Static sizes allow for buffering
+	static := make(chan pipelines.Work, 10)
+	toRequest := make(chan pipelines.Work, 10)
 
 	// Start Request manager queue
 	q := make(chan pipelines.Work)
@@ -58,7 +70,7 @@ func Run(url string) {
 			ticker := time.Tick(5 * time.Second)
 			select {
 			case request := <-q:
-				if request.Key == MineConstant {
+				if strings.HasPrefix(request.Key, MineConstant) {
 					static <- request
 				} else {
 					toRequest <- request
@@ -74,24 +86,20 @@ func Run(url string) {
 	}()
 	s.requestQ = q
 
-	// fixed size pool of routers
-	for i := 0; i < 10; i++ {
-		go func() {
-			for request := range toRequest {
-				s.routeRequest(request)
-			}
-		}()
-	}
+	// route requester
+	go func() {
+		for request := range toRequest {
+			s.routeRequest(request)
+		}
+	}()
 
-	// fixed size pool of forwarders
+	// remote forwarders
 	// TODO: make this smart!!! (only emit one start request to an agent + build queue)
-	for i := 0; i < 10; i++ {
-		go func() {
-			for request := range static {
-				s.forwardRequest(request, toRequest)
-			}
-		}()
-	}
+	go func() {
+		for request := range static {
+			s.forwardRequest(request, toRequest)
+		}
+	}()
 
 	// Set message handlers
 	s.conn.Subscribe("pipelines.server.emit", s.handleEmit)
@@ -104,9 +112,26 @@ func Run(url string) {
 	s.conn.Subscribe("pipelines.server.agent.die", s.handleAgentDie)
 
 	// s.conn.Subscribe("pipelines.node.agent.>", ) // handle msg based on payload
+	s.conn.Subscribe("pipelines.kill", func(m *nats.Msg) {
+		log.Printf("Duration: %s", time.Since(s.start))
+		s.Shutdown()
+	})
+	s.conn.Subscribe("pipelines.start", func(m *nats.Msg) {
+		s.start = time.Now()
+	})
 
 	// Announce startup
 	s.conn.PublishRequest("pipelines.agent.search", "pipelines.server.agent.find", []byte(""))
+
+	// HACK to manually fire startup
+	config, err := ioutil.ReadFile("sample/web/pipeline.yml")
+	if err != nil {
+		log.Printf("Cannot send default load command: %s", err)
+	} else {
+		s.conn.Publish("pipelines.server.load", config)
+	}
+
+	log.Printf("Test Server Status [--test]: %+v", s.isTest)
 	<-s.Running
 }
 
@@ -189,6 +214,10 @@ func (s *server) handleAgentDie(msg *nats.Msg) {
 func (s *server) routeRequest(request pipelines.Work) (err error) {
 	// Worker is not active, need to pass to least loaded agent
 	s.pmux.Lock()
+	if s.pool.Len() <= 0 {
+		s.pmux.Unlock()
+		return errors.New("No agents to route request")
+	}
 	agent := s.pool.Peek().(*Agent)
 	agent.processing++
 	heap.Fix(s.pool, agent.index)
@@ -221,6 +250,16 @@ func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.W
 		if q, ok := s.spooling[key]; ok {
 			q.Push(bits)
 		} else {
+
+			// Verify there are any workers out there
+			s.pmux.RLock()
+			l := s.pool.Len()
+			s.pmux.RUnlock()
+			if l <= 0 {
+				log.Printf("No agents start initial request, not spooling!")
+				return
+			}
+
 			notFound <- work
 			q = utils.NewQueue()
 			s.spooling[key] = q
@@ -233,34 +272,40 @@ func (s *server) forwardRequest(work pipelines.Work, notFound chan<- pipelines.W
 // if so it dumps the queue into the individual (runs as go-routine)
 func (s *server) checkSpool(key string) {
 
-	// Sit and spin until target is active
-	// TODO: allow for timeout here (lost opening request?)
-	for {
-		time.Sleep(time.Second)
-		msg, err := s.conn.Request("pipelines.node."+key+".ping", []byte("ping"), time.Second)
-		if err != nil || string(msg.Data) != "PONG" {
-			log.Printf("Service [%s]: not found yet... trying again in 1s", key)
-		} else {
-			break
-		}
-	}
-
-	// Grab the active queue`
 	s.smux.Lock()
 	q := s.spooling[key]
 	s.smux.Unlock()
-	for q.Len() > 0 {
-		bits := q.Poll().([]byte)
-		msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
-		if err != nil || string(msg.Data) != "ACK" {
-			log.Printf("Error sending packet to %s.  Dropping work :(", key)
-		}
-		runtime.Gosched()
-	}
 
-	s.smux.Lock()
-	delete(s.spooling, key)
-	s.smux.Unlock()
+	var bits []byte
+
+	for {
+		// Sit and spin case
+		if q.Len() <= 0 {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		// Check if worker is available
+		msg, err := s.conn.Request("pipelines.node."+key+".ping", []byte("ping"), time.Second)
+		if err != nil || string(msg.Data) != "PONG" {
+			log.Printf("Service [%s]: not found yet... trying again in 1s", key)
+			continue
+		}
+
+		// Dump the queue as necessary
+		for q.Len() > 0 {
+			if bits == nil {
+				bits = q.Poll().([]byte)
+			}
+			msg, err := s.conn.Request("pipelines.node."+key, bits, time.Second)
+			if err != nil || string(msg.Data) != "ACK" {
+				log.Printf("Error sending packet to %s.  Dropping work :(", key)
+				break
+			}
+			bits = nil
+			runtime.Gosched()
+		}
+	}
 }
 
 // handleEmit deals with clients emits requests
@@ -285,57 +330,6 @@ func (s *server) handleEmit(m *nats.Msg) {
 	for _, node := range nodes {
 		go node.processEmit(&emit, s.requestQ)
 	}
-}
-
-type dataType struct {
-	Name  string            `yaml:"Name"`
-	Type  string            `yaml:"Type"`
-	CMD   string            `yaml:"CMD,omitempty"`
-	Nodes map[string]string `yaml:"Nodes,omitempty"`
-	In    map[string]string `yaml:"In,omitempty"`
-}
-
-// handleLoad downloads and processes a pipeline configuration file
-func (s *server) handleLoad(m *nats.Msg) {
-	// TODO: accept URL addresses
-	// TODO: Parse bitbucket requests... convert a to b
-	//   a: bitbucket.org/bign8/pipelines/sample/web
-	//   b: https://bitbucket.org/bign8/pipelines/raw/master/sample/web/pipeline.yml
-	// TODO: Parse github requests... convert a to b
-	//   a: github.com/bign8/pipelines/sample/web
-	//   b: https://github.com/bign8/pipelines/raw/master/sample/web/pipeline.yml
-	// log.Printf("Loading Config: %s", m.Data)
-	// resp, err := http.Get("http://" + string(m.Data) + "/pipeline.yml")
-	// if err != nil {
-	// 	log.Printf("Cannot Load: %s", m.Data)
-	// 	return
-	// }
-	// config, err := ioutil.ReadAll(resp.Body)
-
-	nodes := make(map[string]dataType)
-
-	// Parse YAML into memory structure
-	configData := strings.Split(string(m.Data), "---")[1:]
-	for _, configFile := range configData {
-		var config dataType
-		if err := yaml.Unmarshal([]byte("---\n"+configFile), &config); err != nil {
-			log.Printf("error loading config: %s", err)
-			return
-		}
-		if config.Type == "Node" {
-			nodes[config.Name] = config
-		}
-	}
-
-	// Initialize nodes into the server
-	for name, config := range nodes {
-		node := NewNode(name, config)
-		for streamName := range config.In {
-			s.Streams[streamName] = append(s.Streams[streamName], node)
-		}
-	}
-
-	log.Printf("Config: %+v\n", s.Streams)
 }
 
 // Shutdown closes all active subscriptions and kills process

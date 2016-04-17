@@ -38,7 +38,7 @@ func (i *Indexer) ProcessRecord(record *pipelines.Record) error {
 }
 
 // Start fires the base start data
-func (i *Indexer) Start(ctx context.Context) (context.Context, error) {
+func (i *Indexer) Start(ctx context.Context, _ func()) (context.Context, error) {
 	return ctx, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,9 @@ var (
 	registerLock       sync.RWMutex
 	registeredServices = make(map[string]Computation)
 )
+
+// ErrKillMeNow is used for now to allow the clients to forcaviley kill themselves
+var ErrKillMeNow = errors.New("KILL ME NOW")
 
 type stater struct {
 	Subject  string
@@ -46,7 +50,7 @@ func Register(name string, comp Computation) {
 
 // Computation is the base interface for all working operations
 type Computation interface {
-	Start(context.Context) (context.Context, error)
+	Start(context.Context, func()) (context.Context, error)
 	ProcessRecord(*Record) error
 	ProcessTimer(*Timer) error
 	// GetState() interface{} // Called after timer and process calls to store internal state
@@ -66,7 +70,11 @@ func EmitRecord(stream string, record *Record) error {
 	if err != nil {
 		return err
 	}
-	return conn.Publish("pipelines.server.emit", bits)
+	dest := "pipelines.server.emit"
+	if record.Test {
+		dest = "pipelines.garbage" // TODO: a test server that compares data results
+	}
+	return conn.Publish(dest, bits)
 }
 
 // Run starts the entire node
@@ -74,7 +82,14 @@ func Run() {
 	// TODO: parse URL from parameters!
 	var err error
 	if conn == nil {
-		conn, err = nats.Connect(nats.DefaultURL, nats.Name("Node"))
+		addr := nats.DefaultURL
+		for _, e := range os.Environ() {
+			pair := strings.Split(e, "=")
+			if pair[0] == "NATS_ADDR" {
+				addr = pair[1]
+			}
+		}
+		conn, err = nats.Connect(addr, nats.Name("Node"))
 		if err != nil {
 			panic(err)
 		}
@@ -101,6 +116,10 @@ func Run() {
 		runtime.Gosched()
 		panic("death")
 	}()
+
+	conn.Subscribe("pipelines.kill", func(m *nats.Msg) {
+		dying <- os.Interrupt
+	})
 
 	// Actually start agent
 	a := &agent{
@@ -129,14 +148,17 @@ func doComputation(work *Work, completed chan<- stater) {
 	}
 
 	// Start the given service
-	ctx := context.WithValue(context.TODO(), "key", work.Key)
-	ctx, err := c.Start(ctx)
+	ctx, dieHard := context.WithCancel(context.TODO())
+	ctx = context.WithValue(ctx, "key", work.Key)
+	ctx, err := c.Start(ctx, func() {
+		conn.Publish("pipelines.kill", []byte(""))
+	})
 	if err != nil {
 		log.Printf("Service could not start: %s : %s", work.Service, err)
 	}
 
 	// Private inbox for node
-	inbox := make(chan interface{}, 100)
+	inbox := make(chan interface{}, 10) // buffer before queue
 	todo := utils.Buffer(work.ServiceKey(), inbox, ctx.Done())
 	enqueued := int64(0)
 	started := int64(0)
@@ -160,22 +182,32 @@ func doComputation(work *Work, completed chan<- stater) {
 	})
 
 	// Blocking call
-	then := time.Now().Add(5 * time.Second)
-	for item := range todo {
-		started++
-		c.ProcessRecord(item.(*Record))
-
-		// Broadcast updates almost every 5 seconds (TICKER is a memory leak, so doing it this way for now...)
-		if time.Now().After(then) {
-			then = time.Now().Add(5 * time.Second)
+	// then := time.Now().Add(5 * time.Second)
+	ticker := time.Tick(5 * time.Second)
+all:
+	for {
+		select {
+		case item := <-todo:
+			if item == nil {
+				break all
+			}
+			started++
+			err := c.ProcessRecord(item.(*Record))
+			if err != nil {
+				break all
+			}
+		case <-ticker:
 			if enqueued > 0 {
 				conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+				enqueued = 0
 			}
 			if started > 0 {
 				conn.Publish("pipelines.stats.started_"+work.Service, []byte(strconv.FormatInt(started, 10)))
+				started = 0
 			}
 		}
 	}
+	dieHard()
 
 	// Sent remaining enqueued items
 	if enqueued > 0 {
@@ -196,5 +228,5 @@ func init() {
 	// 	log.Println("Starting Debug Server... See https://golang.org/pkg/net/http/pprof/ for details.")
 	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
 	// }()
-	log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
+	// log.Printf("Using all the CPUs. Before: %d; After: %d", runtime.GOMAXPROCS(runtime.NumCPU()), runtime.GOMAXPROCS(-1))
 }

@@ -7,7 +7,7 @@ import time
 from math import floor
 from string import letters, digits
 
-N = int(1e4)
+N = int(1e1)
 random.seed(0)
 
 start = time.time()
