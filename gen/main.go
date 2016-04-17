@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"runtime"
 	"strconv"
 	"text/template"
 	"time"
@@ -66,6 +67,7 @@ const tpl = `<!DOCTYPE html>
 var t = template.Must(template.New("page").Parse(tpl))
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	G := genGraph(30)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/page/", func(w http.ResponseWriter, r *http.Request) {

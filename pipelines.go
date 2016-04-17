@@ -195,9 +195,11 @@ all:
 		case <-ticker:
 			if enqueued > 0 {
 				conn.Publish("pipelines.stats.enqueued_"+work.Service, []byte(strconv.FormatInt(enqueued, 10)))
+				enqueued = 0
 			}
 			if started > 0 {
 				conn.Publish("pipelines.stats.started_"+work.Service, []byte(strconv.FormatInt(started, 10)))
+				started = 0
 			}
 		}
 	}
