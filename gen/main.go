@@ -3,53 +3,21 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"net/http"
-	"runtime"
 	"strconv"
 	"text/template"
 	"time"
 )
 
-const n = 1.1e7
+var mask = fmt.Sprintf("%%0%dd", 20) // int(math.Log10(n))
 
-var mask = fmt.Sprintf("%%0%dd", int(math.Log10(n)))
-
-func pad(num int) string {
-	return fmt.Sprintf(mask, num)
+type tpl struct {
+	Title string
+	Items []string
 }
 
-type graph [][]int
-
-func genGraph(numLinks int) graph {
-	if numLinks > n {
-		numLinks = n - 1
-	}
-	log.Print("Starting Graph Creation.")
-	now := time.Now()
-	G := make(graph, n)
-	for i := range G {
-		G[i] = make([]int, numLinks)
-		G[i][0] = i - 1
-		G[i][1] = i + 1
-		for j := 2; j < numLinks; j++ {
-			G[i][j] = rand.Intn(n)
-		}
-	}
-	G[0][0] = n - 1
-	G[n-1][1] = 0
-	for i := range G {
-		x := rand.Intn(numLinks)
-		G[i][0], G[i][x] = G[i][x], G[i][0]
-		x = rand.Intn(numLinks)
-		G[i][1], G[i][x] = G[i][x], G[i][1]
-	}
-	log.Printf("Graph Completed: %s", time.Since(now))
-	return G
-}
-
-const tpl = `<!DOCTYPE html>
+var t = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 <html>
 	<head>
 		<title>Page {{.Title}}</title>
@@ -62,43 +30,43 @@ const tpl = `<!DOCTYPE html>
 			</li>{{end}}
 		</ul>
 	</body>
-</html>`
+</html>`))
 
-var t = template.Must(template.New("page").Parse(tpl))
+func toZero(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/page/"+fmt.Sprintf(mask, 0), http.StatusTemporaryRedirect)
+}
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	G := genGraph(30)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/page/", func(w http.ResponseWriter, r *http.Request) {
 		now := time.Now()
-		u, err := strconv.Atoi(r.URL.Path[6:])
-		// u, err := strconv.ParseUint(r.URL.Path[6:], 10, 64) // 6 = len("/page/")
+
+		// Parse Base String
+		u, err := strconv.ParseUint(r.URL.Path[6:], 10, 64)
 		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		if u > n || u < 0 {
-			http.Redirect(w, r, "/page/"+pad(0), http.StatusTemporaryRedirect)
+			toZero(w, r)
 			return
 		}
 
-		links := make([]string, len(G[u]))
-		for i, n := range G[u] {
-			links[i] = pad(n)
+		// Setup Random Links
+		links := make([]string, 30)
+		random := rand.New(rand.NewSource(int64(u)))
+		links[0], links[1] = fmt.Sprintf(mask, u-1), fmt.Sprintf(mask, u+1)
+		for j := 2; j < len(links); j++ {
+			big := uint64(random.Uint32()) << 32
+			links[j] = fmt.Sprintf(mask, big+uint64(random.Uint32()))
 		}
 
-		data := struct {
-			Title string
-			Items []string
-		}{pad(u), links}
-		if err := t.Execute(w, data); err != nil {
-			log.Fatal(err)
-		}
+		// Randomized first and last position
+		x := random.Intn(len(links))
+		links[0], links[x] = links[x], links[0]
+		x = random.Intn(len(links))
+		links[1], links[x] = links[x], links[1]
+
+		// Render template
+		t.Execute(w, tpl{fmt.Sprintf(mask, u), links})
 		log.Printf("%s %s", r.URL.Path, time.Since(now))
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/page/"+pad(0), http.StatusTemporaryRedirect)
-	})
+	mux.HandleFunc("/", toZero)
 	http.ListenAndServe(":8080", mux)
 }
