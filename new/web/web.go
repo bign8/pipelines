@@ -1,4 +1,7 @@
+// Package web contains the configurations for the pipelines web example
 package web
+
+//go:generate gen.sh
 
 import pipelines "github.com/bign8/pipelines/new"
 
