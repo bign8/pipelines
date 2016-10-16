@@ -19,6 +19,7 @@ type crawler struct {
 }
 
 func (c *crawler) Work(unit pipelines.Unit) error {
+	fmt.Println("Crawling:" + string(unit.Load()))
 	if unit.Type() != web.TypeADDR {
 		return errors.New("Invalid Type")
 	}

@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/nats-io/nats"
 )
@@ -12,18 +11,16 @@ import (
 // Type assertions for internal types
 var (
 	_ Unit = (*unit)(nil)
+	_ Mine = MineFanout
+	_ Mine = MineConstant
 )
 
 // Envirment defined variables
 var (
-	NATS_ADDR = getEnv("NATS_ADDR", nats.DefaultURL)
-	LINE_PREF = getEnv("PL_PREFIX", "pipelines")
-	EMIT_CHAN = LINE_PREF + ".emit"  // data is emitted to admin cluster with this
-	EMIT_POOL = "emit"               // pool used among admins to rotate through emit requests
-	MINE_PREF = LINE_PREF + ".mine." // Miners add the following suffix: "<stream>.<name>"
-	MINE_POOL = "mine"               // pool used by clients to rotate through mine requests
-	NAME_CHAN = LINE_PREF + ".name"  // called to register new consumers with admin
-	NAME_POOL = "pool"               // pool used by admins to rotate through name requests
+	natsAddr = getEnv("NATS_ADDR", nats.DefaultURL)
+	natsPref = getEnv("NATS_PREF", "pipelines")
+	natsEmit = natsPref + ".emit." // receivers listen with the following suffixes ["<stream>"]
+	natsMine = natsPref + ".mine." // Miners add the following suffixes: ["<stream>"]
 )
 
 // Internal NATS connection (per server)
@@ -44,7 +41,7 @@ func connect() (err error) {
 	lock.Lock()
 	defer lock.Unlock()
 	if conn == nil {
-		conn, err = nats.Connect(NATS_ADDR)
+		conn, err = nats.Connect(natsAddr)
 	}
 	return err
 }
@@ -54,35 +51,31 @@ type Worker interface {
 	Work(Unit) error
 }
 
-// Timerer is a consumer defined Worker that can process time events
-type Timerer interface {
-	Worker
-	Timer(Timer) error
-}
-
 // Stream in the name of an input stream
 type Stream string
 
-// Extractor defines how parallel a Worker can be
-type Extractor func(Unit) string
-
-// Fanout is a full fanout key processor
-func Fanout(Unit) string {
-	return "TODO: random string here!"
-}
-
-// Constant is a fixed constant key processor
-func Constant(Unit) string {
-	return "CONSTANT"
-}
-
-// Type defines an internal type for the process
+// Type defines an type the consumer can toggle between to assert Unit types
 type Type string
+
+// Key defines something mined by the Miners
+type Key string
+
+// Mine defines how parallel a Worker can be
+type Mine func(Unit) Key
+
+// MineFanout is a full fanout key processor
+func MineFanout(Unit) Key { return Key(nats.NewInbox()[len(nats.InboxPrefix):]) }
+
+// MineConstant is a fixed constant key processor
+func MineConstant(Unit) Key { return "CONSTANT" }
+
+// Generator constructs a new worker given a stream and key
+type Generator func(Stream, Key) Worker
 
 // Config contains the configuration for an Computation
 type Config struct {
 	Name   string
-	Inputs map[Stream]Extractor
+	Inputs map[Stream]Mine
 	Output map[Stream]Type
 	Create Generator
 }
@@ -107,12 +100,6 @@ type unit struct {
 func (u *unit) Type() Type   { return u.tipe }
 func (u *unit) Load() []byte { return u.bits }
 
-// Timer ...
-type Timer interface{}
-
-// Generator ...
-type Generator func(Stream) Worker
-
 // sub is an internal subscription for a worker that consumers can close
 type computation struct {
 	conf Config
@@ -122,6 +109,9 @@ type computation struct {
 
 // Register starts a worker and provides a closer
 func Register(config Config) (io.Closer, error) {
+	if err := connect(); err != nil {
+		return nil, err
+	}
 	proc := &computation{
 		conf: config,
 		done: make(chan struct{}),
@@ -138,36 +128,48 @@ func (c *computation) Close() error {
 	return nil
 }
 
-func runMiner(name string, stream Stream, ext Extractor) (*nats.Subscription, error) {
-	return conn.QueueSubscribe(MINE_PREF+string(stream)+"."+name, MINE_POOL, func(msg *nats.Msg) {
-		// TODO (bign8): convert payload to Unit the correct way
-		unit := NewUnit("TODO", msg.Data)
-		key := ext(unit)
-		conn.Publish(msg.Reply, []byte(key))
-	})
+// TODO (bign8): convert payload to Unit the correct way
+func msg2unit(msg *nats.Msg) Unit {
+	return NewUnit("TODO", msg.Data)
 }
+
+// func runMiner(name string, stream Stream, ext Mine) (*nats.Subscription, error) {
+// 	return conn.QueueSubscribe(natsMine+string(stream), name, func(msg *nats.Msg) {
+// 		unit := msg2unit(msg)
+// 		fmt.Println("Mining:" + string(unit.Load()))
+// 		key := ext(unit)
+// 		conn.Publish(msg.Reply, []byte(key))
+// 	})
+// }
 
 // run is the main process loop for a computation
 func (c *computation) run() {
-
-	// TODO: send this through batching sender
-	msg, err := conn.Request(NAME_CHAN, []byte(c.conf.Name), 50*time.Millisecond)
-	if err != nil || string(msg.Data) != "ACK" {
-		return
-	}
+	incomming := make(chan *nats.Msg, 10) // massive buffer here (TODO: overflow to redis)
 
 	// Startup miners process
-	for stream, miner := range c.conf.Inputs {
-		sub, err := runMiner(c.conf.Name, stream, miner)
+	for stream := range c.conf.Inputs {
+		// sub, err := runMiner(c.conf.Name, stream, miner)
+		// if err != nil {
+		// 	return
+		// }
+		// defer sub.Unsubscribe()
+		sub, err := conn.ChanQueueSubscribe(natsEmit+string(stream), c.conf.Name, incomming)
 		if err != nil {
 			return
 		}
 		defer sub.Unsubscribe()
 	}
 
-	// TODO: initialize comz based on c.comp.Config()
 	for {
 		select {
+		case in := <-incomming:
+			// Lazy mining (TODO: have this elsewhere)
+			unit := msg2unit(in)
+			stream := Stream(in.Subject[len(natsEmit):])
+			key := c.conf.Inputs[stream](unit)
+
+			// TODO (bign8): create a stream-key -> worker pool whos max-size is governed by the config
+			c.conf.Create(stream, key).Work(unit)
 		case <-c.done:
 			return
 		}
@@ -175,27 +177,18 @@ func (c *computation) run() {
 }
 
 // Emit broadcasts a record into the system
-// TODO (bign8): add to batcher/timeout queue
+// TODO (bign8): add to batcher/timeout/required-responder queue
 func Emit(stream Stream, obj Unit) error {
 	if err := connect(); err != nil {
 		return err
 	}
-	msg, err := conn.Request(EMIT_CHAN, obj.Load(), 50*time.Millisecond)
-	if err != nil || string(msg.Data) != "ACK" {
-		// TODO (bign8): retry to send to admin via jittered backoff https://www.awsarchitectureblog.com/2015/03/backoff.html
-		return err
-	}
-	return nil
+	// TODO (bign8): retry to send to admin via jittered backoff https://www.awsarchitectureblog.com/2015/03/backoff.html
+	return conn.Publish(natsEmit+string(stream), obj.Load())
 }
 
 // EmitType calls Emit for the consumer
 func EmitType(stream Stream, typ Type, bits []byte) error {
 	return Emit(stream, NewUnit(typ, bits))
-}
-
-// Time starts a time for a specific service
-func Time(tim Timer) error {
-	return nil
 }
 
 // // Serializer is a core serializer used to serialize and deserialize units

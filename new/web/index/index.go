@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	pipelines "github.com/bign8/pipelines/new"
@@ -14,6 +15,7 @@ type indexer struct {
 }
 
 func (i *indexer) Work(unit pipelines.Unit) error {
+	fmt.Println("Indexing:" + string(unit.Load()))
 	if unit.Type() != web.TypeADDR {
 		return errors.New("Invalid Type")
 	}
