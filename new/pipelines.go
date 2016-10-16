@@ -1,6 +1,8 @@
+// Package pipelines provides an interface for a stream-processing system.
 package pipelines
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"sync"
@@ -88,17 +90,17 @@ type Unit interface {
 
 // NewUnit constructs a new Unit to Emit
 func NewUnit(typ Type, bits []byte) Unit {
-	return &unit{tipe: typ, bits: bits}
+	return &unit{Typ: typ, Bits: bits}
 }
 
 // internal unit type
 type unit struct {
-	tipe Type
-	bits []byte
+	Typ  Type   `json:"type"`
+	Bits []byte `json:"bits,omitempty"`
 }
 
-func (u *unit) Type() Type   { return u.tipe }
-func (u *unit) Load() []byte { return u.bits }
+func (u *unit) Type() Type   { return u.Typ }
+func (u *unit) Load() []byte { return u.Bits }
 
 // sub is an internal subscription for a worker that consumers can close
 type computation struct {
@@ -130,7 +132,9 @@ func (c *computation) Close() error {
 
 // TODO (bign8): convert payload to Unit the correct way
 func msg2unit(msg *nats.Msg) Unit {
-	return NewUnit("TODO", msg.Data)
+	nit := &unit{}
+	json.Unmarshal(msg.Data, nit)
+	return nit
 }
 
 // func runMiner(name string, stream Stream, ext Mine) (*nats.Subscription, error) {
@@ -183,7 +187,11 @@ func Emit(stream Stream, obj Unit) error {
 		return err
 	}
 	// TODO (bign8): retry to send to admin via jittered backoff https://www.awsarchitectureblog.com/2015/03/backoff.html
-	return conn.Publish(natsEmit+string(stream), obj.Load())
+	bits, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	return conn.Publish(natsEmit+string(stream), bits)
 }
 
 // EmitType calls Emit for the consumer
@@ -191,13 +199,13 @@ func EmitType(stream Stream, typ Type, bits []byte) error {
 	return Emit(stream, NewUnit(typ, bits))
 }
 
-// // Serializer is a core serializer used to serialize and deserialize units
-// type Serializer interface {
-// 	Serialize(Unit) ([]byte, error)
-// 	Deserialize([]byte) (interface{}, error)
+// // Encoder interface is for all encoders
+// type Encoder interface {
+// 	Encode(Unit) ([]byte, error)
+// 	Decode([]byte) (interface{}, error)
 // }
 //
-// // RegisterSerializer binds a serializer for a specific machine
-// func RegisterSerializer(Serializer) {
+// // RegisterEncoder binds a serializer for a specific machine
+// func RegisterEncoder(Serializer) {
 // 	panic("TODO")
 // }
