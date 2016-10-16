@@ -18,10 +18,10 @@ func (*storer) Work(unit pipelines.Unit) error {
 func main() {
 	pipelines.Register(pipelines.Config{
 		Name: "store",
-		Inputs: map[pipelines.Stream]pipelines.Extractor{
-			web.StreamSTORE: pipelines.Fanout,
+		Inputs: map[pipelines.Stream]pipelines.Mine{
+			web.StreamSTORE: pipelines.MineFanout,
 		},
-		Create: func(pipelines.Stream) pipelines.Worker {
+		Create: func(pipelines.Stream, pipelines.Key) pipelines.Worker {
 			return &storer{}
 		},
 	})

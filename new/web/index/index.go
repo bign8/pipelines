@@ -31,7 +31,7 @@ func (i *indexer) Work(unit pipelines.Unit) error {
 	return nil
 }
 
-func (i *indexer) New(key pipelines.Stream) pipelines.Worker {
+func (i *indexer) New(stream pipelines.Stream, key pipelines.Key) pipelines.Worker {
 	return i
 }
 
@@ -43,8 +43,8 @@ func main() {
 
 	pipelines.Register(pipelines.Config{
 		Name: "index",
-		Inputs: map[pipelines.Stream]pipelines.Extractor{
-			web.StreamINDEX: pipelines.Constant,
+		Inputs: map[pipelines.Stream]pipelines.Mine{
+			web.StreamINDEX: pipelines.MineConstant,
 		},
 		Output: map[pipelines.Stream]pipelines.Type{
 			web.StreamCRAWL: web.TypeADDR,

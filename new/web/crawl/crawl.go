@@ -67,7 +67,7 @@ type generator struct {
 	base *http.Client
 }
 
-func (gen *generator) New(key pipelines.Stream) pipelines.Worker {
+func (gen *generator) New(stream pipelines.Stream, key pipelines.Key) pipelines.Worker {
 	return &crawler{client: gen.base}
 }
 
@@ -80,8 +80,8 @@ func main() {
 
 	pipelines.Register(pipelines.Config{
 		Name: "crawl",
-		Inputs: map[pipelines.Stream]pipelines.Extractor{
-			web.StreamCRAWL: pipelines.Fanout,
+		Inputs: map[pipelines.Stream]pipelines.Mine{
+			web.StreamCRAWL: pipelines.MineFanout,
 		},
 		Output: map[pipelines.Stream]pipelines.Type{
 			web.StreamINDEX: web.TypeADDR,
