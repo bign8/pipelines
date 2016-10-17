@@ -30,5 +30,6 @@ func main() {
 			return &storer{}
 		},
 	})
+	fmt.Println("Storing...")
 	runtime.Goexit()
 }

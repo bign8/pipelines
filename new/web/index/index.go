@@ -52,5 +52,6 @@ func main() {
 		},
 		Create: gen.New,
 	})
+	fmt.Println("Indexing...")
 	runtime.Goexit()
 }

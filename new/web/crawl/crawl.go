@@ -90,5 +90,6 @@ func main() {
 		},
 		Create: gen.New,
 	})
+	fmt.Println("Crawling...")
 	runtime.Goexit()
 }

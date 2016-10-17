@@ -4,7 +4,6 @@ package pipelines
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"sync"
 
@@ -123,7 +122,6 @@ func Register(config Config) (io.Closer, error) {
 		done: make(chan struct{}),
 	}
 	go proc.run()
-	log.Printf("Registered: %q", config.Name)
 	return proc, nil
 }
 
