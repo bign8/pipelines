@@ -1,0 +1,29 @@
+version: '2'
+services:
+  nats:
+    image: nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+  ui:
+    image: pipeline-web-ui
+    depends_on: [ nats ]
+    environment:
+      NATS_ADDR: "nats://nats:4222"
+    ports:
+      - "9999:9999"
+  store:
+    image: pipeline-web-store
+    depends_on: [ nats ]
+    environment:
+      NATS_ADDR: "nats://nats:4222"
+  index:
+    image: pipeline-web-index
+    depends_on: [ nats ]
+    environment:
+      NATS_ADDR: "nats://nats:4222"
+  crawl:
+    image: pipeline-web-crawl
+    depends_on: [ nats ]
+    environment:
+      NATS_ADDR: "nats://nats:4222"

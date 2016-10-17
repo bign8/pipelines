@@ -11,20 +11,31 @@ cat > Dockerfile <<- EOM
 	CMD ["/main"]
 EOM
 
-echo -n "Downloading CA Certs "
-curl https://curl.haxx.se/ca/cacert.pem -# -o certz.crt 2>&1 | xxd | while read; do echo -n .; done
-echo " Done"
+if [ ! -f certz.crt ]; then
+	echo -n "Downloading CA Certs "
+	curl https://curl.haxx.se/ca/cacert.pem -# -o certz.crt 2>&1 | xxd | while read; do echo -n .; done
+	echo " Done"
+fi
 
 # find go source directories (TODO: assert their package is main)
 find */* -name "*.go" -print0 | xargs -0 -n1 dirname | sort -u | while read line; do
-  echo "Processing Directory '$line'"
+  echo -n "Processing '$line' "
   pushd $line > /dev/null
   cp ../certz.crt ca-certificates.crt
   cp ../Dockerfile Dockerfile
 
+	# EXPOSE ui port
+	if [ "$line" == "ui" ]; then
+		echo "EXPOSE 9999" >> Dockerfile
+	fi
+
+	# Verify go build
+	go test | sed -n '1!p'
+	echo "[Verified]"
+
   # Generate go source
   echo -en "\tGolang "
-  CGO_ENABLED=0 GOOS=linux go build -v -installsuffix cgo -o main -v . 2>&1 | while read; do echo -n .; done
+  CGO_ENABLED=0 GOOS=linux go build -v -installsuffix cgo -o main . 2>&1 | while read; do echo -n .; done
   echo " Done"
 
   # Generating docker container
@@ -39,7 +50,15 @@ find */* -name "*.go" -print0 | xargs -0 -n1 dirname | sort -u | while read line
 
   popd > /dev/null
 done
+CODE=$?
 
 # Cleanup files
-rm certz.crt Dockerfile
-echo "Complete"
+rm Dockerfile
+
+# Get proper exit code
+if [ $CODE == 0 ]; then
+	echo "Complete"
+else
+	echo "Failure"
+	exit $CODE
+fi

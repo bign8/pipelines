@@ -16,7 +16,7 @@ type indexer struct {
 }
 
 func (i *indexer) Work(unit pipelines.Unit) error {
-	fmt.Println("Indexing:" + string(unit.Load()))
+	fmt.Printf("Indexing: %q %d\n", string(unit.Load()), len(i.index))
 	if unit.Type() != web.TypeADDR {
 		return errors.New("Invalid Type")
 	}
