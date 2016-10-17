@@ -4,6 +4,7 @@ package pipelines
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"sync"
 
@@ -44,6 +45,9 @@ func connect() (err error) {
 	defer lock.Unlock()
 	if conn == nil {
 		conn, err = nats.Connect(natsAddr)
+	}
+	if err != nil {
+		panic(err)
 	}
 	return err
 }
@@ -119,6 +123,7 @@ func Register(config Config) (io.Closer, error) {
 		done: make(chan struct{}),
 	}
 	go proc.run()
+	log.Printf("Registered: %q", config.Name)
 	return proc, nil
 }
 

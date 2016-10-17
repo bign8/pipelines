@@ -2,16 +2,21 @@ package main
 
 import (
 	"fmt"
+	"regexp"
+	"runtime"
 
 	pipelines "github.com/bign8/pipelines/new"
 	"github.com/bign8/pipelines/new/web"
 )
 
+var titler = regexp.MustCompile(`<title>(.*)</title>`)
+
 type storer struct{}
 
 func (*storer) Work(unit pipelines.Unit) error {
+	// titler.
 	// TODO: store somewhere for later processing
-	fmt.Println("Storing\n" + string(unit.Load()))
+	fmt.Printf("Storing: %s\n", titler.FindSubmatch(unit.Load())[1])
 	return nil
 }
 
@@ -25,4 +30,5 @@ func main() {
 			return &storer{}
 		},
 	})
+	runtime.Goexit()
 }

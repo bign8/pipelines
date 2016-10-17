@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 
 	pipelines "github.com/bign8/pipelines/new"
@@ -51,4 +52,5 @@ func main() {
 		},
 		Create: gen.New,
 	})
+	runtime.Goexit()
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ func (c *crawler) Work(unit pipelines.Unit) error {
 			unique[absolute.String()] = true
 		}
 	}
+	fmt.Printf("%#v\n", unique)
 	// TODO: use local bloom filter/hash to not emit duplicates too
 	for link := range unique {
 		pipelines.EmitType(web.StreamINDEX, web.TypeADDR, []byte(link))
@@ -89,4 +91,5 @@ func main() {
 		},
 		Create: gen.New,
 	})
+	runtime.Goexit()
 }
