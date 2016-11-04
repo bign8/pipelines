@@ -35,8 +35,11 @@ find */* -name "*.go" -print0 | xargs -0 -n1 dirname | sort -u | while read line
 
   # Generate go source
   echo -en "\tGolang "
-  CGO_ENABLED=0 GOOS=linux go build -v -installsuffix cgo -o main . 2>&1 | awk getline | while read; do echo -n .; done
+  CGO_ENABLED=0 GOOS=linux go build -v -installsuffix cgo -o main -ldflags="-s -w" . 2>&1 | awk getline | while read; do echo -n .; done
   echo " Done"
+
+	# Compressing
+	upx main
 
   # Generating docker container
   echo -en "\tDocker "
