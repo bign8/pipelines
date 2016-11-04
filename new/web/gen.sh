@@ -36,14 +36,16 @@ find */* -name "*.go" -print0 | xargs -0 -n1 dirname | sort -u | while read line
   # Generate go source
   echo -en "\tGolang "
   CGO_ENABLED=0 GOOS=linux go build -v -installsuffix cgo -o main -ldflags="-s -w" . 2>&1 | awk getline | while read; do echo -n .; done
+	# docker run --rm -e CGO_ENABLED=0 -e -v "$PWD":/usr/src/main -w /usr/src/main golang go build -v -installsuffix cgo -o main -ldflags="-s -w" 2>&1 | awk getline | while read; do echo -n .; done
   echo " Done"
 
-	# Compressing
-	upx main
+	# Compressing (upx failes on OSX sierra)
+	# upx main
+	# docker run -v $PWD:/data --rm lalyos/upx main
 
   # Generating docker container
   echo -en "\tDocker "
-  docker build -t pipeline-web-"$line":latest . | while read; do echo -n .; done
+  docker build --rm -t pipeline-web-"$line":latest . | while read; do echo -n .; done
   echo " Done"
 
   # Cleaning up assets
