@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -20,7 +19,7 @@ type crawler struct {
 }
 
 func (c *crawler) Work(unit pipelines.Unit) error {
-	fmt.Println("Crawling:" + string(unit.Load()))
+	// fmt.Println("Crawling:" + string(unit.Load()))
 	if unit.Type() != web.TypeADDR {
 		return errors.New("Invalid Type")
 	}
@@ -66,9 +65,11 @@ func (c *crawler) Work(unit pipelines.Unit) error {
 
 type generator struct {
 	base *http.Client
+	ctr  int
 }
 
 func (gen *generator) New(stream pipelines.Stream, key pipelines.Key) pipelines.Worker {
+	gen.ctr++ // because crawlers are not re-used
 	return &crawler{client: gen.base}
 }
 
@@ -91,5 +92,9 @@ func main() {
 		Create: gen.New,
 	})
 	fmt.Println("Crawling...")
-	runtime.Goexit()
+	for {
+		time.Sleep(time.Second)
+		fmt.Printf("Crawl/Sec: %d\n", gen.ctr)
+		gen.ctr = 0
+	}
 }

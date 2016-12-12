@@ -69,9 +69,10 @@ var t = template.Must(template.New("page").Parse(tpl))
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	G := genGraph(30)
+	ctr := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/page/", func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now()
+		// now := time.Now()
 		u, err := strconv.Atoi(r.URL.Path[6:])
 		// u, err := strconv.ParseUint(r.URL.Path[6:], 10, 64) // 6 = len("/page/")
 		if err != nil {
@@ -95,10 +96,20 @@ func main() {
 		if err := t.Execute(w, data); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("%s %s", r.URL.Path, time.Since(now))
+		// log.Printf("%s %s", r.URL.Path, time.Since(now))
+		ctr++
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/page/"+pad(0), http.StatusTemporaryRedirect)
 	})
+	go func() {
+		for {
+			if ctr != 0 {
+				fmt.Printf("QPS: %d\n", ctr)
+				ctr = 0
+			}
+			time.Sleep(time.Second)
+		}
+	}()
 	http.ListenAndServe(":8080", mux)
 }
